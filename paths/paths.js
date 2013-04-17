@@ -5,22 +5,22 @@ var forever = function() {
   return Rx.Observable.never();
 };
 
-
-var evalFunc = function(tables) {
+var evalFunc = function(tables, newTables) {
   var links = tables['links'];
   var paths = tables['paths'];
+  var newLinks = newTables['links'];
+  var newPaths = newTables['paths'];
 
-  var oldPaths = paths;
-  paths = links.select(function(link) {
+  newPaths = links.select(function(link) {
     return {
       from: link.from,
       to: link.to,
       nxt: link.to,
       cost: link.cost
     };
-  }).concat(paths).distinct(JSON.stringify);
+  }).concat(newPaths).distinct(JSON.stringify);
 
-  paths = links.join(oldPaths, forever, forever, function(link, path) {
+  newPaths = links.join(paths, forever, forever, function(link, path) {
     if (link.to !== path.from) {
       return null;
     }
@@ -32,11 +32,11 @@ var evalFunc = function(tables) {
     };
   }).where(function(path) {
     return path !== null;
-  }).concat(paths).distinct(JSON.stringify);
+  }).concat(newPaths).distinct(JSON.stringify);
 
   return {
-    links: links,
-    paths: paths
+    links: newLinks,
+    paths: newPaths
   };
 };
 
@@ -60,4 +60,4 @@ tables = {}
 tables['paths'] = Rx.Observable.empty();
 tables['links'] = Rx.Observable.fromArray(initLinks);
 
-util.naiveEval(tables, evalFunc)['paths'].subscribe(console.log);
+util.seminaiveEval(tables, evalFunc)['paths'].subscribe(console.log);
