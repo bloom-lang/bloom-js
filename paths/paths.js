@@ -34,24 +34,26 @@ var evalFunc = function(tables) {
     return path !== null;
   }).concat(paths).distinct(JSON.stringify);
 
-  var stop = false;
-  paths.count().zip(oldPaths.count(), function(c0, c1) {
-    return c0 === c1;
-  }).subscribe(function(x) {
-    stop = x;
-  });
-
-  tables['links'] = links;
-  tables['paths'] = paths;
-  return stop;
+  return {
+    links: links,
+    paths: paths
+  };
 };
 
+/*
 initLinks = [
   {from: 'a', to: 'b', cost: 1},
   {from: 'a', to: 'b', cost: 4},
   {from: 'b', to: 'c', cost: 1},
   {from: 'c', to: 'd', cost: 1},
   {from: 'd', to: 'e', cost: 1}
+]*/
+
+initLinks = [
+  {from: 'a', to: 'b', cost: 1},
+  {from: 'a', to: 'c', cost: 1},
+  {from: 'c', to: 'b', cost: 2},
+  {from: 'b', to: 'd', cost: 1}
 ]
 
 tables = {}
