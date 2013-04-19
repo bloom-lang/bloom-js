@@ -57,7 +57,8 @@ initLinks = [
 ]
 
 tables = {}
-tables['paths'] = Rx.Observable.empty();
 tables['links'] = Rx.Observable.fromArray(initLinks);
+tables['paths'] = Rx.Observable.empty();
 
 util.seminaiveEval(tables, evalFunc)['paths'].subscribe(console.log);
+

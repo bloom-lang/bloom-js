@@ -17,22 +17,64 @@ exports.naiveEval = function(tables, evalFunc) {
   return tables;
 };
 
+var copyObj = function(obj) {
+  var res = {};
+  for (var k in obj) {
+    res[k] = obj[k];
+  }
+  return res;
+}
+
+var setDifference = function(a, b) {
+  var forever = function() {
+    return Rx.Observable.never();
+  };
+
+  var bEmpty = false;
+  b.isEmpty().subscribe(function(be) {
+    bEmpty = be;
+  });
+  if (bEmpty) {
+    return a;
+  }
+
+  return a.join(b, forever, forever, function(x, y) {
+    if (JSON.stringify(x) === JSON.stringify(y)) {
+      return [x, 0];
+    }
+    return [x, 1];
+  }).groupBy(function(x){
+    return JSON.stringify(x[0]);
+  }).selectMany(function(grp) {
+    return grp.min();
+  }).where(function(x){
+    return x[1] == 1;
+  }).select(function(x){
+    return x[0];
+  });
+}
+
 exports.seminaiveEval = function(tables, evalFunc) {
-  var dtables = tables;
+  var dtables = copyObj(tables);
+  var newTables = copyObj(tables);
   do {
-    var newTables = tables;
     for (var tname in tables) {
-      var evalTables = tables;
+      var evalTables = copyObj(tables);
       evalTables[tname] = dtables[tname];
       newTables = evalFunc(evalTables, newTables);
     }
     var allEmpty = true;
     for (var tname in tables) {
-      dtables[tname] = null;// newTables[tname] `minus` tables[tname];
-      // if count is not empty, set allEmpty to false
+      dtables[tname] = setDifference(newTables[tname], tables[tname]);
+      dtables[tname].count().subscribe(function(c) {
+        if (c !== 0) {
+          allEmpty = false;
+        }
+      })
     }
-    tables = newTables;
+    tables = copyObj(newTables);
   } while (!allEmpty);
 
   return tables;
 };
+
