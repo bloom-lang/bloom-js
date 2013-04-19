@@ -23,7 +23,7 @@ var copyObj = function(obj) {
     res[k] = obj[k];
   }
   return res;
-}
+};
 
 var setDifference = function(a, b) {
   var forever = function() {
@@ -52,7 +52,7 @@ var setDifference = function(a, b) {
   }).select(function(x){
     return x[0];
   });
-}
+};
 
 exports.seminaiveEval = function(tables, evalFunc) {
   var dtables = copyObj(tables);
