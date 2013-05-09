@@ -1,3 +1,4 @@
+var net = require('net');
 var triflow = require('triflow');
 var triutil = require('./triutil');
 var OutputElement = require('./OutputElement');
@@ -97,6 +98,22 @@ var aggFunc = function(oldTables) {
   };
 }
 
+var runEval = function(tables) {
+  tables = triutil.stratExec(tables, [evalFunc, aggFunc]);
+
+  var output = new OutputElement();
+  console.log('all paths');
+  tables['paths'].wire([output]);
+  tables['paths'].go();
+  tables['paths'].stopConsumer(output);
+  console.log('shortest paths');
+  tables['shortestPaths'].wire([output]);
+  tables['shortestPaths'].go();
+  tables['shortestPaths'].stopConsumer(output);
+
+  return tables;
+}
+
 
 links = new TableElement();
 paths = new TableElement();
@@ -114,13 +131,38 @@ tables = {
   shortestPaths: shortestPaths
 };
 
-tables = triutil.stratExec(tables, [evalFunc, aggFunc]);
+tables = runEval(tables);
 
-var output = new OutputElement();
-console.log('all paths');
-tables['paths'].wire([output]);
-tables['paths'].go();
-console.log('shortest paths');
-tables['shortestPaths'].wire([output]);
-tables['shortestPaths'].go();
+var clients = [];
+var channels = {};
+channels['connect'] = function(m) {
+  clients.push([m[1], m[2]]);
+};
+channels['mcast'] = function(m) {
+  var newLinks = new TableElement();
+  newLinks.consume(m[1][3]);
+  tables['links'].wire(newLinks);
+  tables['links'].go();
+  tables['links'] = newLinks;
+  runEval(tables);
+  for (var i = 0; i < clients.length; i++) {
+    triutil.sendMessage(['mcast', clients[i][0], m[1]]);
+  }
+};
+channels['close'] = function(m) {
+  for (var i = 0; i < clients.length; i++) {
+    if (clients[i][0] === m[1] && clients[i][1] === m[2]) {
+      clients.splice(i, 1);
+    }
+  }
+}
+var s = net.createServer(function(socket) {
+  socket.on('data', function(data) {
+    var message = JSON.parse(data);
+    var channelName = message.shift();
+    channels[channelName](message);
+  });
+});
+
+s.listen(8000);
 
