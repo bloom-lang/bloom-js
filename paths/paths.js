@@ -40,21 +40,22 @@ var evalFunc = function(tables, newTables) {
   };
 };
 
-/*
 var initLinks = [
   {from: 'a', to: 'b', cost: 1},
   {from: 'a', to: 'b', cost: 4},
   {from: 'b', to: 'c', cost: 1},
   {from: 'c', to: 'd', cost: 1},
   {from: 'd', to: 'e', cost: 1}
-]*/
+]
 
+/*
 var initLinks = [
   {from: 'a', to: 'b', cost: 1},
   {from: 'a', to: 'c', cost: 1},
   {from: 'c', to: 'b', cost: 2},
   {from: 'b', to: 'd', cost: 1}
 ];
+*/
 
 var tables = {};
 tables['links'] = Rx.Observable.fromArray(initLinks);

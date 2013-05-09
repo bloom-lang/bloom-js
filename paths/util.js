@@ -43,13 +43,13 @@ var setDifference = function(a, b) {
       return [x, 0];
     }
     return [x, 1];
-  }).groupBy(function(x){
+  }).groupBy(function(x) {
     return JSON.stringify(x[0]);
   }).selectMany(function(grp) {
     return grp.min();
-  }).where(function(x){
+  }).where(function(x) {
     return x[1] == 1;
-  }).select(function(x){
+  }).select(function(x) {
     return x[0];
   });
 };
