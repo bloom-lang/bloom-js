@@ -66,6 +66,14 @@ exports.seminaiveEval = function(tables, evalFunc) {
   return tables;
 }
 
+exports.stratExec = function(tables, evalFuncs) {
+  for (var i = 0; i < evalFuncs.length; i++) {
+    tables = exports.seminaiveEval(tables, evalFuncs[i]);
+  }
+
+  return tables;
+}
+
 /*
 // O(2^n) delta evaluation method
 exports.seminaiveEval = function(tables, evalFunc) {
