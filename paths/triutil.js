@@ -66,6 +66,7 @@ var setDifference = function(a, b) {
   return res;
 };
 
+/*
 // Set difference method
 exports.seminaiveEval = function(tables, evalFunc) {
   var dtables = copyTables(tables);
@@ -91,6 +92,7 @@ exports.seminaiveEval = function(tables, evalFunc) {
 
   return tables;
 }
+*/
 
 exports.stratExec = function(tables, evalFuncs) {
   for (var i = 0; i < evalFuncs.length; i++) {
@@ -100,7 +102,6 @@ exports.stratExec = function(tables, evalFuncs) {
   return tables;
 }
 
-/*
 // O(2^n) delta evaluation method
 exports.seminaiveEval = function(tables, evalFunc) {
   var tnames = Object.keys(tables).sort();
@@ -157,7 +158,9 @@ exports.seminaiveEval = function(tables, evalFunc) {
 
     var newDeltas = false;
     for (var i = 0; i < tnames.length; i++) {
-      if (deltaTables[tnames[i]].count() > 0) {
+      var tname = tnames[i];
+      deltaTables[tname] = setDifference(deltaTables[tname], newTables[tname]);
+      if (deltaTables[tname].count() > 0) {
         newDeltas = true;
         break;
       }
@@ -166,5 +169,4 @@ exports.seminaiveEval = function(tables, evalFunc) {
 
   return newTables;
 };
-*/
 

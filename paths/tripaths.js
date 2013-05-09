@@ -133,6 +133,8 @@ tables = {
 
 tables = runEval(tables);
 
+// Now make a server that runs the evaluator anytime it receives a new
+// link as a message
 var clients = [];
 var channels = {};
 channels['connect'] = function(m) {
