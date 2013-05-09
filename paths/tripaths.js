@@ -1,10 +1,13 @@
 var triflow = require('triflow');
+var triutil = require('./triutil');
 var OutputElement = require('./OutputElement');
 var TableElement = require('./TableElement');
 
-var evalFunc = function(oldLinks, oldPaths) {
+var evalFunc = function(oldTables) {
+  var newLinks = new TableElement();
   var newPaths = new TableElement();
-
+  var unionLinks = new triflow.element.Union();
+  unionLinks.wire([newLinks]);
   var unionPaths = new triflow.element.Union();
   unionPaths.wire([newPaths]);
 
@@ -28,38 +31,39 @@ var evalFunc = function(oldLinks, oldPaths) {
   var linkBuffer = new triflow.element.Buffer();
   linkBuffer.wire([joinPaths]);
   linkBuffer.wire([mapPaths]);
+  linkBuffer.wire([unionLinks]);
   var pathBuffer = new triflow.element.Buffer();
   pathBuffer.wire([joinPaths]);
 
-  oldLinks.wire([linkBuffer]);
-  oldPaths.wire([pathBuffer]);
-  oldLinks.go();
-  oldPaths.go();
-  oldLinks.stopConsumer(linkBuffer);
-  oldPaths.stopConsumer(pathBuffer);
+  oldTables['links'].wire([linkBuffer]);
+  oldTables['paths'].wire([pathBuffer]);
+  oldTables['links'].go();
+  oldTables['paths'].go();
 
-  return newPaths;
+  return {
+    links: newLinks,
+    paths: newPaths
+  };
 };
 
 
 links = new TableElement();
 paths = new TableElement();
-
 links.consume(['a', 'b', 1]);
 links.consume(['a', 'b', 4]);
 links.consume(['b', 'c', 1]);
 links.consume(['c', 'd', 1]);
 links.consume(['d', 'e', 1]);
 links.consumeEOS();
-
 paths.consumeEOS();
+tables = {
+  links: links,
+  paths: paths
+};
 
-do {
-  var oldCount = paths.count();
-  paths = evalFunc(links, paths);
-} while (oldCount !== paths.count());
+tables = triutil.naiveEval(tables, evalFunc);
 
 var output = new OutputElement();
-paths.wire([output]);
-paths.go();
+tables['paths'].wire([output]);
+tables['paths'].go();
 
