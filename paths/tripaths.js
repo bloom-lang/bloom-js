@@ -31,7 +31,6 @@ var evalFunc = function(oldTables) {
   var linkBuffer = new triflow.element.Buffer();
   linkBuffer.wire([joinPaths]);
   linkBuffer.wire([mapPaths]);
-  linkBuffer.wire([unionLinks]);
   var pathBuffer = new triflow.element.Buffer();
   pathBuffer.wire([joinPaths]);
 
@@ -39,6 +38,8 @@ var evalFunc = function(oldTables) {
   oldTables['paths'].wire([pathBuffer]);
   oldTables['links'].go();
   oldTables['paths'].go();
+  oldTables['links'].stopConsumer(linkBuffer);
+  oldTables['paths'].stopConsumer(pathBuffer);
 
   return {
     links: newLinks,
@@ -61,7 +62,7 @@ tables = {
   paths: paths
 };
 
-tables = triutil.naiveEval(tables, evalFunc);
+tables = triutil.seminaiveEval(tables, evalFunc);
 
 var output = new OutputElement();
 tables['paths'].wire([output]);
