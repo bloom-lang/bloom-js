@@ -21,15 +21,22 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 {number}                  return 'NUM_LIT'
 {id}                      return 'ID'
 <<EOF>>                   return 'EOF'
+'.'                       return '.'
 ','                       return ','
+':'                       return ':'
+'('                       return '('
+')'                       return ')'
 '['                       return '['
 ']'                       return ']'
+'{'                       return '{'
+'}'                       return '}'
 '=>'                      return '=>'
 '<='                      return '<='
 '<~'                      return '<~'
 '<+-'                     return '<+-'
 '<+'                      return '<+'
 '<-'                      return '<-'
+.                         return 'INVALID'
 
 /lex
 
@@ -48,7 +55,7 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 
 program
     : state_block bloom_block EOF
-      { console.log($2); }
+      { console.log(JSON.stringify($2, null, 2)); }
     ;
 
 state_block
@@ -80,19 +87,8 @@ collection_type
     ;
 
 field_list
-    : '[' id_list ']'
-      -> $2
-    ;
-
-id_list
-    : ID comma_id
-      -> ast.cons($1, $2)
-    ;
-
-comma_id
-    : /* empty */
-    | ',' ID comma_id
-      -> ast.cons($2, $3)
+    : '[' (ID ',')* ID? ']'
+      -> $3 === undefined ? $2 : $2.concat([$3])
     ;
 
 bloom_block
@@ -113,9 +109,83 @@ bloom_op
     | '<-'
     ;
 
-primary
+/* JAVASCRIPT PARSER */
+
+expression
+    : or_test
+    | or_test '?' expression ':' expression
+    ;
+
+or_test
+    : and_test
+    | or_test '||' and_test
+    ;
+
+and_test
+    : not_test
+    | and_test '&&' not_test
+    ;
+
+not_test
+    : comparison
+    | '!' not_test
+    ;
+
+comparison
     // TODO
+    : primary
+    ;
+
+primary
     : ID
+    | STR_LIT
+    | NUM_LIT
+    | parenth_form
+    | arr_display
+    | obj_display
+    | property_ref
+    | subscription
+    | call
+    ;
+
+parenth_form
+    : '(' expression ')'
+      -> $2
+    ;
+
+arr_display
+    : '[' expression_list ']'
+      -> ast.arrDisplay($2)
+    ;
+
+expression_list
+    : (expression ',')* expression?
+      -> $2 === undefined ? $1 : $1.concat([$2])
+    ;
+
+obj_display
+    : '{' (kv_pair ',')* (kv_pair)? '}'
+      -> ast.objDisplay($3 === undefined ? $2 : $2.concat([$3]))
+    ;
+
+kv_pair
+    : expression ':' expression
+      -> [$1, $3]
+    ;
+
+property_ref
+    : primary '.' ID
+      -> ast.propertyRef($1, $3)
+    ;
+
+subscription
+    : primary '[' expression ']'
+      -> ast.subscription($1, $3)
+    ;
+
+call
+    : primary '(' expression_list ')'
+      -> ast.call($1, $3)
     ;
 
 %%
