@@ -1,3 +1,17 @@
+exports.program = function(state_block, bloom_block) {
+  var blocks = [];
+  if (state_block !== undefined) {
+    blocks.push(state_block);
+  }
+  if (bloom_block !== undefined) {
+    blocks.push(bloom_block);
+  }
+  return {
+    type: 'program',
+    blocks: blocks
+  };
+};
+
 exports.stateBlock = function(stateDecls) {
   return {
     type: 'state_block',

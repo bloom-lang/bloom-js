@@ -54,8 +54,8 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 %% /* language grammar */
 
 program
-    : state_block bloom_block EOF
-      { console.log(JSON.stringify($2, null, 2)); }
+    : state_block? bloom_block? EOF
+      { return ast.program($1, $2); }
     ;
 
 state_block
