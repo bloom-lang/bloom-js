@@ -1,15 +1,13 @@
-var Rx = require('rx');
+var Ix = require('ix');
 
 exports.naiveEval = function(tables, evalFunc) {
   do {
     var newTables = evalFunc(tables, tables);
     var allSame = true;
     for (var tname in tables) {
-      newTables[tname].count().zip(tables[tname].count(), function(c0, c1) {
-        return c0 === c1;
-      }).subscribe(function(x) {
-        allSame = allSame && x;
-      });
+      if (newTables[tname].count() !== tables[tname].count()) {
+        allSame = false;
+      }
     }
     tables = newTables;
   } while (!allSame);
@@ -25,33 +23,8 @@ var copyObj = function(obj) {
   return res;
 };
 
-var setDifference = function(a, b) {
-  var forever = function() {
-    return Rx.Observable.never();
-  };
-
-  var bEmpty = false;
-  b.isEmpty().subscribe(function(be) {
-    bEmpty = be;
-  });
-  if (bEmpty) {
-    return a;
-  }
-
-  return a.join(b, forever, forever, function(x, y) {
-    if (JSON.stringify(x) === JSON.stringify(y)) {
-      return [x, 0];
-    }
-    return [x, 1];
-  }).groupBy(function(x) {
-    return JSON.stringify(x[0]);
-  }).selectMany(function(grp) {
-    return grp.min();
-  }).where(function(x) {
-    return x[1] == 1;
-  }).select(function(x) {
-    return x[0];
-  });
+exports.cmpJSON = function(x, y) {
+  return JSON.stringify(x) === JSON.stringify(y);
 };
 
 exports.seminaiveEval = function(tables, evalFunc) {
@@ -65,12 +38,10 @@ exports.seminaiveEval = function(tables, evalFunc) {
     }
     var allEmpty = true;
     for (var tname in tables) {
-      dtables[tname] = setDifference(newTables[tname], tables[tname]);
-      dtables[tname].count().subscribe(function(c) {
-        if (c !== 0) {
-          allEmpty = false;
-        }
-      })
+      dtables[tname] = newTables[tname].except(tables[tname], exports.cmpJSON);
+      if (dtables[tname].count() !== 0) {
+        allEmpty = false;
+      }
     }
     tables = copyObj(newTables);
   } while (!allEmpty);
