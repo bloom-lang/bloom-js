@@ -2,7 +2,7 @@ var Bloom = require('./Bloom');
 
 var Paths = new Bloom();
 
-Paths.addCollection(
+var links = Paths.addCollection(
   'table', 'links', ['from', 'to', 'cost'], [],
   [
     {from: 'a', to: 'b', cost: 1},
@@ -12,9 +12,9 @@ Paths.addCollection(
     {from: 'd', to: 'e', cost: 1}
   ]
 );
-Paths.addCollection('table', 'paths', ['from', 'to', 'nxt', 'cost'], []);
+var paths = Paths.addCollection('table', 'paths', ['from', 'to', 'nxt', 'cost'], []);
 
-Paths.op('<=', 'paths', Paths.select('links', function(link) {
+Paths.op('<=', paths, links.select(function(link) {
   return {
     from: link.from,
     to: link.to,
@@ -23,9 +23,8 @@ Paths.op('<=', 'paths', Paths.select('links', function(link) {
   };
 }));
 
-Paths.op('<=', 'paths', Paths.join(
-  'links',
-  'paths',
+Paths.op('<=', paths, links.join(
+  paths,
   function(link) { return link.to; },
   function(path) { return path.from; },
   function(link, path) {

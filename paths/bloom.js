@@ -1,4 +1,4 @@
-var Ix = require('ix');
+var BloomCollection = require('./BloomCollection');
 
 var Bloom = function() {
   this._collections = {};
@@ -7,21 +7,15 @@ var Bloom = function() {
 
 var prototype = Bloom.prototype;
 
-prototype.addCollection = function(type, name, keys, vals, data) {
+prototype.addCollection = function(type, name, keys, vals, initArr) {
   if (keys === undefined) {
     keys = type === 'channel' ? ['@address', 'val'] : ['key'];
   }
   if (vals === undefined) {
     vals = type === 'channel' ? [] : ['val'];
   }
-  this._collections[name] = {
-    type: type,
-    keys: keys,
-    vals: vals,
-    data: data === undefined ?
-      Ix.Enumerable.empty() :
-      Ix.Enumerable.fromArray(data)
-  };
+  this._collections[name] = new BloomCollection(name, type, initArr);
+  return this._collections[name];
 };
 
 prototype.op = function(type, lhs, rhs) {
@@ -32,29 +26,6 @@ prototype.op = function(type, lhs, rhs) {
   });
 };
 
-prototype.join = function(outerRef, innerRef, outerFn, innerFn, joinFn) {
-  var self = this;
-  return function() {
-    var outerCol = typeof outerRef === 'string' ?
-      self._collections[outerRef].data :
-      outerRef();
-    var innerCol = typeof innerRef === 'string' ?
-      self._collections[innerRef].data :
-      innerRef();
-    return outerCol.join(innerCol, outerFn, innerFn, joinFn);
-  };
-};
-
-prototype.select = function(colRef, fn) {
-  var self = this;
-  return function() {
-    var collection = typeof colRef === 'string' ?
-      self._collections[colRef].data :
-      colRef();
-    return collection.select(fn);
-  };
-};
-
 var cmpJSON = function(x, y) {
   return JSON.stringify(x) === JSON.stringify(y);
 };
@@ -63,29 +34,29 @@ prototype.tick = function() {
   var self = this;
   do {
     for (var name in this._collections) {
-      this._collections[name].newData = this._collections[name].data;
+      this._collections[name]._newData = this._collections[name]._data;
     }
     this._ops.forEach(function(op) {
       if (op.type === '<=') {
-        self._collections[op.lhs].newData = op.rhs().
-          concat(self._collections[op.lhs].newData).
+        op.lhs._newData = op.rhs.getData().
+          concat(op.lhs._newData).
           distinct(cmpJSON);
       }
     });
     var allSame = true;
     for (var name in this._collections) {
-      if (this._collections[name].newData.count() !==
-          this._collections[name].data.count()) {
+      if (this._collections[name]._newData.count() !==
+          this._collections[name]._data.count()) {
         allSame = false;
       }
     }
     for (var name in this._collections) {
-      this._collections[name].data = this._collections[name].newData;
+      this._collections[name]._data = this._collections[name]._newData;
     }
   } while (!allSame);
 
   for (var name in this._collections) {
-    console.log(name, this._collections[name].data.toArray());
+    console.log(name, this._collections[name]._data.toArray());
   }
 };
 
