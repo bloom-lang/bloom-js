@@ -1,25 +1,12 @@
-/*
-
-Copyright (c) Microsoft Open Technologies, Inc.  All rights reserved.
-Microsoft Open Technologies would like to thank its contributors, a list
-of whom are at http://aspnetwebstack.codeplex.com/wikipage?title=Contributors.
-
-Licensed under the Apache License, Version 2.0 (the "License"); you
-may not use this file except in compliance with the License. You may
-obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions
-and limitations under the License.
-*/
+// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
 
 (function (root, factory) {
-    var freeExports = typeof exports == 'object' && exports &&
-    (typeof root == 'object' && root && root == root.global && (window = root), exports);
+    var freeExports = typeof exports == 'object' && exports,
+        freeModule = typeof module == 'object' && module && module.exports == freeExports && module,
+        freeGlobal = typeof global == 'object' && global;
+    if (freeGlobal.global === freeGlobal) {
+        window = freeGlobal;
+    }
 
     // Because of build optimizers
     if (typeof define === 'function' && define.amd) {
@@ -27,30 +14,30 @@ and limitations under the License.
             root.Rx = factory(root, exports, Rx);
             return root.Rx;
         });
-    } else if (typeof module == 'object' && module && module.exports == freeExports) {
+    } else if (typeof module === 'object' && module && module.exports === freeExports) {
         module.exports = factory(root, module.exports, require('./rx'));
     } else {
         root.Rx = factory(root, {}, root.Rx);
     }
-}(this, function (global, exp, root, undefined) {
+}(this, function (global, exp, Rx, undefined) {
     
     // Refernces
-    var Observable = root.Observable,
+    var Observable = Rx.Observable,
         observableProto = Observable.prototype,
-        AnonymousObservable = root.Internals.AnonymousObservable,
+        AnonymousObservable = Rx.Internals.AnonymousObservable,
         observableDefer = Observable.defer,
         observableEmpty = Observable.empty,
         observableThrow = Observable.throwException,
         observableFromArray = Observable.fromArray,
-        timeoutScheduler = root.Scheduler.timeout,
-        SingleAssignmentDisposable = root.SingleAssignmentDisposable,
-        SerialDisposable = root.SerialDisposable,
-        CompositeDisposable = root.CompositeDisposable,
-        RefCountDisposable = root.RefCountDisposable,
-        Subject = root.Subject,
-        BinaryObserver = root.Internals.BinaryObserver,
-        addRef = root.Internals.addRef,
-        normalizeTime = root.Scheduler.normalize;
+        timeoutScheduler = Rx.Scheduler.timeout,
+        SingleAssignmentDisposable = Rx.SingleAssignmentDisposable,
+        SerialDisposable = Rx.SerialDisposable,
+        CompositeDisposable = Rx.CompositeDisposable,
+        RefCountDisposable = Rx.RefCountDisposable,
+        Subject = Rx.Subject,
+        BinaryObserver = Rx.Internals.BinaryObserver,
+        addRef = Rx.Internals.addRef,
+        normalizeTime = Rx.Scheduler.normalize;
 
     function observableTimerDate(dueTime, scheduler) {
         return new AnonymousObservable(function (observer) {
@@ -78,7 +65,7 @@ and limitations under the License.
                 self(d);
             });
         });
-    };
+    }
 
     function observableTimerTimeSpan(dueTime, scheduler) {
         var d = normalizeTime(dueTime);
@@ -88,7 +75,7 @@ and limitations under the License.
                 observer.onCompleted();
             });
         });
-    };
+    }
 
     function observableTimerTimeSpanAndPeriod(dueTime, period, scheduler) {
         if (dueTime === period) {
@@ -102,13 +89,47 @@ and limitations under the License.
         return observableDefer(function () {
             return observableTimerDateAndPeriod(scheduler.now() + dueTime, period, scheduler);
         });
-    };
+    }
 
+    /**
+     *  Returns an observable sequence that produces a value after each period.
+     *  
+     * @example
+     *  1 - res = Rx.Observable.interval(1000);
+     *  2 - res = Rx.Observable.interval(1000, Rx.Scheduler.timeout);
+     *      
+     * @static
+     * @memberOf Observable
+     * @param {Number} period Period for producing the values in the resulting sequence (specified as an integer denoting milliseconds).
+     * @param {Scheduler} [scheduler] Scheduler to run the timer on. If not specified, Rx.Scheduler.timeout is used.
+     * @returns {Observable} An observable sequence that produces a value after each period.
+     */
     var observableinterval = Observable.interval = function (period, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         return observableTimerTimeSpanAndPeriod(period, period, scheduler);
     };
 
+    /**
+     *  Returns an observable sequence that produces a value after dueTime has elapsed and then after each period.
+     *  
+     * @example
+     *  1 - res = Rx.Observable.timer(new Date());
+     *  2 - res = Rx.Observable.timer(new Date(), 1000);
+     *  3 - res = Rx.Observable.timer(new Date(), Rx.Scheduler.timeout);
+     *  4 - res = Rx.Observable.timer(new Date(), 1000, Rx.Scheduler.timeout);
+     *  
+     *  5 - res = Rx.Observable.timer(5000);
+     *  6 - res = Rx.Observable.timer(5000, 1000);
+     *  7 - res = Rx.Observable.timer(5000, Rx.Scheduler.timeout);
+     *  8 - res = Rx.Observable.timer(5000, 1000, Rx.Scheduler.timeout);
+     *  
+     * @static
+     * @memberOf Observable 
+     * @param {Number} dueTime Absolute (specified as a Date object) or relative time (specified as an integer denoting milliseconds) at which to produce the first value.
+     * @param {Mixed} [periodOrScheduler]  Period to produce subsequent values (specified as an integer denoting milliseconds), or the scheduler to run the timer on. If not specified, the resulting timer is not recurring.
+     * @param {Scheduler} [scheduler]  Scheduler to run the timer on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} An observable sequence that produces a value after due time has elapsed and then each period.
+     */
     var observableTimer = Observable.timer = function (dueTime, periodOrScheduler, scheduler) {
         var period;
         scheduler || (scheduler = timeoutScheduler);
@@ -193,7 +214,7 @@ and limitations under the License.
             });
             return new CompositeDisposable(subscription, cancelable);
         });
-    };
+    }
 
     function observableDelayDate(dueTime, scheduler) {
         var self = this;
@@ -203,6 +224,20 @@ and limitations under the License.
         });
     }
 
+    /**
+     *  Time shifts the observable sequence by dueTime. The relative time intervals between the values are preserved.
+     *  
+     * @example
+     *  1 - res = Rx.Observable.timer(new Date());
+     *  2 - res = Rx.Observable.timer(new Date(), Rx.Scheduler.timeout);
+     *  
+     *  3 - res = Rx.Observable.delay(5000);
+     *  4 - res = Rx.Observable.delay(5000, 1000, Rx.Scheduler.timeout);
+     * @memberOf Observable#
+     * @param {Number} dueTime Absolute (specified as a Date object) or relative time (specified as an integer denoting milliseconds) by which to shift the observable sequence.
+     * @param {Scheduler} [scheduler] Scheduler to run the delay timers on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} Time-shifted sequence.
+     */
     observableProto.delay = function (dueTime, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         return dueTime instanceof Date ?
@@ -210,6 +245,18 @@ and limitations under the License.
             observableDelayTimeSpan.call(this, dueTime, scheduler);
     };
 
+    /**
+     *  Ignores values from an observable sequence which are followed by another value before dueTime.
+     *  
+     * @example
+     *  1 - res = source.throttle(5000); // 5 seconds
+     *  2 - res = source.throttle(5000, scheduler);        
+     * 
+     * @memberOf Observable
+     * @param {Number} dueTime Duration of the throttle period for each value (specified as an integer denoting milliseconds).
+     * @param {Scheduler} [scheduler]  Scheduler to run the throttle timers on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} The throttled sequence.
+     */
     observableProto.throttle = function (dueTime, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         var source = this;
@@ -247,6 +294,19 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Projects each element of an observable sequence into zero or more windows which are produced based on timing information.
+     *  
+     * @example
+     *  1 - res = xs.windowWithTime(1000, scheduler); // non-overlapping segments of 1 second
+     *  2 - res = xs.windowWithTime(1000, 500 , scheduler); // segments of 1 second with time shift 0.5 seconds
+     *      
+     * @memberOf Observable#
+     * @param {Number} timeSpan Length of each window (specified as an integer denoting milliseconds).
+     * @param {Mixed} [timeShiftOrScheduler]  Interval between creation of consecutive windows (specified as an integer denoting milliseconds), or an optional scheduler parameter. If not specified, the time shift corresponds to the timeSpan parameter, resulting in non-overlapping adjacent windows.
+     * @param {Scheduler} [scheduler]  Scheduler to run windowing timers on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} An observable sequence of windows.
+     */
     observableProto.windowWithTime = function (timeSpan, timeShiftOrScheduler, scheduler) {
         var source = this, timeShift;
         if (timeShiftOrScheduler === undefined) {
@@ -337,6 +397,18 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Projects each element of an observable sequence into a window that is completed when either it's full or a given amount of time has elapsed.
+     *  @example
+     *  1 - res = source.windowWithTimeOrCount(5000, 50); // 5s or 50 items
+     *  2 - res = source.windowWithTimeOrCount(5000, 50, scheduler); //5s or 50 items
+     *      
+     * @memberOf Observable#
+     * @param {Number} timeSpan Maximum time length of a window.
+     * @param {Number} count Maximum element count of a window.
+     * @param {Scheduler} [scheduler]  Scheduler to run windowing timers on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} An observable sequence of windows.
+     */
     observableProto.windowWithTimeOrCount = function (timeSpan, count, scheduler) {
         var source = this;
         scheduler || (scheduler = timeoutScheduler);
@@ -395,6 +467,19 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Projects each element of an observable sequence into zero or more buffers which are produced based on timing information.
+     *  
+     * @example
+     *  1 - res = xs.bufferWithTime(1000, scheduler); // non-overlapping segments of 1 second
+     *  2 - res = xs.bufferWithTime(1000, 500, scheduler; // segments of 1 second with time shift 0.5 seconds
+     *      
+     * @memberOf Observable#
+     * @param {Number} timeSpan Length of each buffer (specified as an integer denoting milliseconds).
+     * @param {Mixed} [timeShiftOrScheduler]  Interval between creation of consecutive buffers (specified as an integer denoting milliseconds), or an optional scheduler parameter. If not specified, the time shift corresponds to the timeSpan parameter, resulting in non-overlapping adjacent buffers.
+     * @param {Scheduler} [scheduler]  Scheduler to run buffer timers on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} An observable sequence of buffers.
+     */
     observableProto.bufferWithTime = function (timeSpan, timeShiftOrScheduler, scheduler) {
         var timeShift;
         if (timeShiftOrScheduler === undefined) {
@@ -412,6 +497,19 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Projects each element of an observable sequence into a buffer that is completed when either it's full or a given amount of time has elapsed.
+     *  
+     * @example
+     *  1 - res = source.bufferWithTimeOrCount(5000, 50); // 5s or 50 items in an array 
+     *  2 - res = source.bufferWithTimeOrCount(5000, 50, scheduler); // 5s or 50 items in an array
+     *      
+     * @memberOf Observable#
+     * @param {Number} timeSpan Maximum time length of a buffer.
+     * @param {Number} count Maximum element count of a buffer.
+     * @param {Scheduler} [scheduler]  Scheduler to run bufferin timers on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} An observable sequence of buffers.
+     */
     observableProto.bufferWithTimeOrCount = function (timeSpan, count, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         return this.windowWithTimeOrCount(timeSpan, count, scheduler).selectMany(function (x) {
@@ -419,6 +517,17 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Records the time interval between consecutive values in an observable sequence.
+     *  
+     * @example
+     *  1 - res = source.timeInterval();
+     *  2 - res = source.timeInterval(Rx.Scheduler.timeout);
+     *      
+     * @memberOf Observable#
+     * @param [scheduler]  Scheduler used to compute time intervals. If not specified, the timeout scheduler is used.
+     * @returns {Observable} An observable sequence with time interval information on values.
+     */
     observableProto.timeInterval = function (scheduler) {
         var source = this;
         scheduler || (scheduler = timeoutScheduler);
@@ -435,6 +544,17 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Records the timestamp for each value in an observable sequence.
+     *  
+     * @example
+     *  1 - res = source.timestamp(); // produces { value: x, timestamp: ts }
+     *  2 - res = source.timestamp(Rx.Scheduler.timeout);
+     *      
+     * @memberOf Observable#
+     * @param {Scheduler} [scheduler]  Scheduler used to compute timestamps. If not specified, the timeout scheduler is used.
+     * @returns {Observable} An observable sequence with timestamp information on values.
+     */
     observableProto.timestamp = function (scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         return this.select(function (x) {
@@ -468,10 +588,23 @@ and limitations under the License.
                     atEnd = true;
                 }),
                 sampler.subscribe(sampleSubscribe, observer.onError.bind(observer), sampleSubscribe)
-            )
+            );
         });
-    };
+    }
 
+    /**
+     *  Samples the observable sequence at each interval.
+     *  
+     * @example
+     *  1 - res = source.sample(sampleObservable); // Sampler tick sequence
+     *  2 - res = source.sample(5000); // 5 seconds
+     *  2 - res = source.sample(5000, Rx.Scheduler.timeout); // 5 seconds
+     *      
+     * @memberOf Observable#
+     * @param {Mixed} intervalOrSampler Interval at which to sample (specified as an integer denoting milliseconds) or Sampler Observable.
+     * @param {Scheduler} [scheduler]  Scheduler to run the sampling timer on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} Sampled observable sequence.
+     */
     observableProto.sample = function (intervalOrSampler, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         if (typeof intervalOrSampler === 'number') {
@@ -480,6 +613,23 @@ and limitations under the License.
         return sampleObservable(this, intervalOrSampler);
     };
 
+    /**
+     *  Returns the source observable sequence or the other observable sequence if dueTime elapses.
+     *  
+     * @example
+     *  1 - res = source.timeout(new Date()); // As a date
+     *  2 - res = source.timeout(5000); // 5 seconds
+     *  3 - res = source.timeout(new Date(), Rx.Observable.returnValue(42)); // As a date and timeout observable
+     *  4 - res = source.timeout(5000, Rx.Observable.returnValue(42)); // 5 seconds and timeout observable
+     *  5 - res = source.timeout(new Date(), Rx.Observable.returnValue(42), Rx.Scheduler.timeout); // As a date and timeout observable
+     *  6 - res = source.timeout(5000, Rx.Observable.returnValue(42), Rx.Scheduler.timeout); // 5 seconds and timeout observable
+     *      
+     * @memberOf Observable#
+     * @param {Number} dueTime Absolute (specified as a Date object) or relative time (specified as an integer denoting milliseconds) when a timeout occurs.
+     * @param {Observable} [other]  Sequence to return in case of a timeout. If not specified, a timeout error throwing sequence will be used.
+     * @param {Scheduler} [scheduler]  Scheduler to run the timeout timers on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} The source sequence switching to the other sequence in case of a timeout.
+     */
     observableProto.timeout = function (dueTime, other, scheduler) {
         var schedulerMethod, source = this;
         other || (other = observableThrow(new Error('Timeout')));
@@ -504,9 +654,8 @@ and limitations under the License.
             createTimer = function () {
                 var myId = id;
                 timer.disposable(schedulerMethod(dueTime, function () {
-                    var timerWins;
                     switched = id === myId;
-                    timerWins = switched;
+                    var timerWins = switched;
                     if (timerWins) {
                         subscription.disposable(other.subscribe(observer));
                     }
@@ -537,6 +686,27 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Generates an observable sequence by iterating a state from an initial state until the condition fails.
+     *  
+     * @example
+     *  res = source.generateWithAbsoluteTime(0, 
+     *      function (x) { return return true; }, 
+     *      function (x) { return x + 1; }, 
+     *      function (x) { return x; }, 
+     *      function (x) { return new Date(); 
+     *  });
+     *      
+     * @static
+     * @memberOf Observable
+     * @param {Mixed} initialState Initial state.
+     * @param {Function} condition Condition to terminate generation (upon returning false).
+     * @param {Function} iterate Iteration step function.
+     * @param {Function} resultSelector Selector function for results produced in the sequence.
+     * @param {Function} timeSelector Time selector function to control the speed of values being produced each iteration, returning Date values.
+     * @param {Scheduler} [scheduler]  Scheduler on which to run the generator loop. If not specified, the timeout scheduler is used.
+     * @returns {Observable} The generated sequence.
+     */
     Observable.generateWithAbsoluteTime = function (initialState, condition, iterate, resultSelector, timeSelector, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         return new AnonymousObservable(function (observer) {
@@ -573,6 +743,27 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Generates an observable sequence by iterating a state from an initial state until the condition fails.
+     * 
+     * @example 
+     *  res = source.generateWithRelativeTime(0, 
+     *      function (x) { return return true; }, 
+     *      function (x) { return x + 1; }, 
+     *      function (x) { return x; }, 
+     *      function (x) { return 500; }
+     *  );
+     *      
+     * @static
+     * @memberOf Observable
+     * @param {Mixed} initialState Initial state.
+     * @param {Function} condition Condition to terminate generation (upon returning false).
+     * @param {Function} iterate Iteration step function.
+     * @param {Function} resultSelector Selector function for results produced in the sequence.
+     * @param {Function} timeSelector Time selector function to control the speed of values being produced each iteration, returning integer values denoting milliseconds.
+     * @param {Scheduler} [scheduler]  Scheduler on which to run the generator loop. If not specified, the timeout scheduler is used.
+     * @returns {Observable} The generated sequence.
+     */
     Observable.generateWithRelativeTime = function (initialState, condition, iterate, resultSelector, timeSelector, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         return new AnonymousObservable(function (observer) {
@@ -609,11 +800,35 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Time shifts the observable sequence by delaying the subscription.
+     *  
+     * @example
+     *  1 - res = source.delaySubscription(5000); // 5s
+     *  2 - res = source.delaySubscription(5000, Rx.Scheduler.timeout); // 5 seconds
+     *      
+     * @memberOf Observable#
+     * @param {Number} dueTime Absolute or relative time to perform the subscription at.
+     * @param {Scheduler} [scheduler]  Scheduler to run the subscription delay timer on. If not specified, the timeout scheduler is used.
+     * @returns {Observable} Time-shifted sequence.
+     */
     observableProto.delaySubscription = function (dueTime, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         return this.delayWithSelector(observableTimer(dueTime, scheduler), function () { return observableEmpty(); });
     };
 
+    /**
+     *  Time shifts the observable sequence based on a subscription delay and a delay selector function for each element.
+     *  
+     * @example
+     *  1 - res = source.delayWithSelector(function (x) { return Rx.Scheduler.timer(5000); }); // with selector only
+     *  1 - res = source.delayWithSelector(Rx.Observable.timer(2000), function (x) { return Rx.Observable.timer(x); }); // with delay and selector
+     *      
+     * @memberOf Observable#
+     * @param {Observable} [subscriptionDelay]  Sequence indicating the delay for the subscription to the source. 
+     * @param {Function} delayDurationSelector Selector function to retrieve a sequence indicating the delay for each given element.
+     * @returns {Observable} Time-shifted sequence.
+     */
     observableProto.delayWithSelector = function (subscriptionDelay, delayDurationSelector) {
         var source = this, subDelay, selector;
         if (typeof subscriptionDelay === 'function') {
@@ -659,13 +874,27 @@ and limitations under the License.
             } else {
                 subscription.setDisposable(subDelay.subscribe(function () {
                     start();
-                }, observer.onError.bind(onError), function () { start(); }));
+                }, observer.onError.bind(observer), function () { start(); }));
             }
 
             return new CompositeDisposable(subscription, delays);
         });
     };
 
+    /**
+     *  Returns the source observable sequence, switching to the other observable sequence if a timeout is signaled.
+     *  
+     * @example
+     *  1 - res = source.timeoutWithSelector(Rx.Observable.timer(500)); 
+     *  2 - res = source.timeoutWithSelector(Rx.Observable.timer(500), function (x) { return Rx.Observable.timer(200); });
+     *  3 - res = source.timeoutWithSelector(Rx.Observable.timer(500), function (x) { return Rx.Observable.timer(200); }, Rx.Observable.returnValue(42));
+     *      
+     * @memberOf Observable#
+     * @param {Observable} [firstTimeout]  Observable sequence that represents the timeout for the first element. If not provided, this defaults to Observable.never().
+     * @param {Function} [timeoutDurationSelector] Selector to retrieve an observable sequence that represents the timeout between the current element and the next element.
+     * @param {Observable} [other]  Sequence to return in case of a timeout. If not provided, this is set to Observable.throwException(). 
+     * @returns {Observable} The source sequence switching to the other sequence in case of a timeout.
+     */
     observableProto.timeoutWithSelector = function (firstTimeout, timeoutdurationSelector, other) {
         firstTimeout || (firstTimeout = observableNever());
         other || (other = observableThrow(new Error('Timeout')));
@@ -731,6 +960,16 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Ignores values from an observable sequence which are followed by another value within a computed throttle duration.
+     *  
+     * @example
+     *  1 - res = source.delayWithSelector(function (x) { return Rx.Scheduler.timer(x + x); }); 
+     * 
+     * @memberOf Observable#
+     * @param {Function} throttleDurationSelector Selector function to retrieve a sequence indicating the throttle duration for each given element.
+     * @returns {Observable} The throttled sequence.
+     */
     observableProto.throttleWithSelector = function (throttleDurationSelector) {
         var source = this;
         return new AnonymousObservable(function (observer) {
@@ -778,7 +1017,21 @@ and limitations under the License.
         });
     };
 
-
+    /**
+     *  Skips elements for the specified duration from the end of the observable source sequence, using the specified scheduler to run timers.
+     *  
+     *  1 - res = source.skipLastWithTime(5000);     
+     *  2 - res = source.skipLastWithTime(5000, scheduler); 
+     *      
+     * @description
+     *  This operator accumulates a queue with a length enough to store elements received during the initial duration window.
+     *  As more elements are received, elements older than the specified duration are taken from the queue and produced on the
+     *  result sequence. This causes elements to be delayed with duration.          
+     * @memberOf Observable#
+     * @param {Number} duration Duration for skipping elements from the end of the sequence.
+     * @param {Scheduler} [scheduler]  Scheduler to run the timer on. If not specified, defaults to Rx.Scheduler.timeout
+     * @returns {Observable} An observable sequence with the elements skipped during the specified duration from the end of the source sequence.
+     */
     observableProto.skipLastWithTime = function (duration, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         var source = this;
@@ -800,10 +1053,39 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Returns elements within the specified duration from the end of the observable source sequence, using the specified schedulers to run timers and to drain the collected elements.
+     *  
+     * @example
+     *  1 - res = source.takeLastWithTime(5000, [optional timer scheduler], [optional loop scheduler]); 
+     * @description
+     *  This operator accumulates a queue with a length enough to store elements received during the initial duration window.
+     *  As more elements are received, elements older than the specified duration are taken from the queue and produced on the
+     *  result sequence. This causes elements to be delayed with duration.    
+     * @memberOf Observable#
+     * @param {Number} duration Duration for taking elements from the end of the sequence.
+     * @param {Scheduler} [timerScheduler]  Scheduler to run the timer on. If not specified, defaults to Rx.Scheduler.timeout.
+     * @param {Scheduler} [loopScheduler]  Scheduler to drain the collected elements. If not specified, defaults to Rx.Scheduler.immediate.
+     * @returns {Observable} An observable sequence with the elements taken during the specified duration from the end of the source sequence.
+     */
     observableProto.takeLastWithTime = function (duration, timerScheduler, loopScheduler) {
         return this.takeLastBufferWithTime(duration, timerScheduler).selectMany(function (xs) { return observableFromArray(xs, loopScheduler); });
     };
 
+    /**
+     *  Returns an array with the elements within the specified duration from the end of the observable source sequence, using the specified scheduler to run timers.
+     *  
+     * @example
+     *  1 - res = source.takeLastBufferWithTime(5000, [optional scheduler]); 
+     * @description
+     *  This operator accumulates a queue with a length enough to store elements received during the initial duration window.
+     *  As more elements are received, elements older than the specified duration are taken from the queue and produced on the
+     *  result sequence. This causes elements to be delayed with duration.   
+     * @memberOf Observable#
+     * @param {Number} duration Duration for taking elements from the end of the sequence.
+     * @param {Scheduler} scheduler Scheduler to run the timer on. If not specified, defaults to Rx.Scheduler.timeout.
+     * @returns {Observable} An observable sequence containing a single array with the elements taken during the specified duration from the end of the source sequence.
+     */
     observableProto.takeLastBufferWithTime = function (duration, scheduler) {
         var source = this;
         scheduler || (scheduler = timeoutScheduler);
@@ -831,6 +1113,20 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Takes elements for the specified duration from the start of the observable source sequence, using the specified scheduler to run timers.
+     *  
+     * @example
+     *  1 - res = source.takeWithTime(5000,  [optional scheduler]); 
+     * @description
+     *  This operator accumulates a queue with a length enough to store elements received during the initial duration window.
+     *  As more elements are received, elements older than the specified duration are taken from the queue and produced on the
+     *  result sequence. This causes elements to be delayed with duration.    
+     * @memberOf Observable#
+     * @param {Number} duration Duration for taking elements from the start of the sequence.
+     * @param {Scheduler} scheduler Scheduler to run the timer on. If not specified, defaults to Rx.Scheduler.timeout.
+     * @returns {Observable} An observable sequence with the elements taken during the specified duration from the start of the source sequence.
+     */
     observableProto.takeWithTime = function (duration, scheduler) {
         var source = this;
         scheduler || (scheduler = timeoutScheduler);
@@ -843,6 +1139,23 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Skips elements for the specified duration from the start of the observable source sequence, using the specified scheduler to run timers.
+     *  
+     * @example
+     *  1 - res = source.skipWithTime(5000, [optional scheduler]); 
+     *  
+     * @description     
+     *  Specifying a zero value for duration doesn't guarantee no elements will be dropped from the start of the source sequence.
+     *  This is a side-effect of the asynchrony introduced by the scheduler, where the action that causes callbacks from the source sequence to be forwarded
+     *  may not execute immediately, despite the zero due time.
+     *  
+     *  Errors produced by the source sequence are always forwarded to the result sequence, even if the error occurs before the duration.     
+     * @memberOf Observable#     
+     * @param {Number} duration Duration for skipping elements from the start of the sequence.
+     * @param {Scheduler} scheduler Scheduler to run the timer on. If not specified, defaults to Rx.Scheduler.timeout.
+     * @returns {Observable} An observable sequence with the elements skipped during the specified duration from the start of the source sequence.
+     */
     observableProto.skipWithTime = function (duration, scheduler) {
         var source = this;
         scheduler || (scheduler = timeoutScheduler);
@@ -859,6 +1172,17 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Skips elements from the observable source sequence until the specified start time, using the specified scheduler to run timers.
+     *  Errors produced by the source sequence are always forwarded to the result sequence, even if the error occurs before the start time>.
+     *  
+     * @examples
+     *  1 - res = source.skipUntilWithTime(new Date(), [optional scheduler]);         
+     * @memberOf Obseravble#
+     * @param startTime Time to start taking elements from the source sequence. If this value is less than or equal to Date(), no elements will be skipped.
+     * @param scheduler Scheduler to run the timer on. If not specified, defaults to Rx.Scheduler.timeout.
+     * @returns {Observable} An observable sequence with the elements skipped until the specified start time. 
+     */
     observableProto.skipUntilWithTime = function (startTime, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         var source = this;
@@ -875,6 +1199,16 @@ and limitations under the License.
         });
     };
 
+    /**
+     *  Takes elements for the specified duration until the specified end time, using the specified scheduler to run timers.
+     *  
+     * @example
+     *  1 - res = source.takeUntilWithTime(new Date(), [optional scheduler]);   
+     * @memberOf Observable#   
+     * @param {Number} endTime Time to stop taking elements from the source sequence. If this value is less than or equal to new Date(), the result stream will complete immediately.
+     * @param {Scheduler} scheduler Scheduler to run the timer on.
+     * @returns {Observable} An observable sequence with the elements taken until the specified end time.
+     */
     observableProto.takeUntilWithTime = function (endTime, scheduler) {
         scheduler || (scheduler = timeoutScheduler);
         var source = this;
@@ -885,5 +1219,5 @@ and limitations under the License.
         });
     };
 
-    return root;
+    return Rx;
 }));

@@ -1,25 +1,12 @@
-/*
-
-Copyright (c) Microsoft Open Technologies, Inc.  All rights reserved.
-Microsoft Open Technologies would like to thank its contributors, a list
-of whom are at http://aspnetwebstack.codeplex.com/wikipage?title=Contributors.
-
-Licensed under the Apache License, Version 2.0 (the "License"); you
-may not use this file except in compliance with the License. You may
-obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions
-and limitations under the License.
-*/
+// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
 
 (function (root, factory) {
-    var freeExports = typeof exports == 'object' && exports &&
-    (typeof root == 'object' && root && root == root.global && (window = root), exports);
+    var freeExports = typeof exports == 'object' && exports,
+        freeModule = typeof module == 'object' && module && module.exports == freeExports && module,
+        freeGlobal = typeof global == 'object' && global;
+    if (freeGlobal.global === freeGlobal) {
+        window = freeGlobal;
+    }
 
     // Because of build optimizers
     if (typeof define === 'function' && define.amd) {
@@ -27,25 +14,25 @@ and limitations under the License.
             root.Rx = factory(root, exports, Rx);
             return root.Rx;
         });
-    } else if (typeof module == 'object' && module && module.exports == freeExports) {
+    } else if (typeof module === 'object' && module && module.exports === freeExports) {
         module.exports = factory(root, module.exports, require('./rx'));
     } else {
         root.Rx = factory(root, {}, root.Rx);
     }
-}(this, function (global, exp, root, undefined) {
+}(this, function (global, exp, Rx, undefined) {
     
     // Defaults
-    var Observer = root.Observer,
-        Observable = root.Observable,
-        Notification = root.Notification,
-        VirtualTimeScheduler = root.VirtualTimeScheduler,
-        Disposable = root.Disposable,
+    var Observer = Rx.Observer,
+        Observable = Rx.Observable,
+        Notification = Rx.Notification,
+        VirtualTimeScheduler = Rx.VirtualTimeScheduler,
+        Disposable = Rx.Disposable,
         disposableEmpty = Disposable.empty,
         disposableCreate = Disposable.create,
-        CompositeDisposable = root.CompositeDisposable,
-        SingleAssignmentDisposable = root.SingleAssignmentDisposable,
+        CompositeDisposable = Rx.CompositeDisposable,
+        SingleAssignmentDisposable = Rx.SingleAssignmentDisposable,
         slice = Array.prototype.slice,
-        inherits = root.Internals.inherits;
+        inherits = Rx.Internals.inherits;
 
     // Utilities
     function defaultComparer(x, y) {
@@ -61,10 +48,18 @@ and limitations under the License.
             slice.call(args);
     }
 
-    // New predicate tests
+    /** 
+     * @private 
+     * @constructor
+     */
     function OnNextPredicate(predicate) {
         this.predicate = predicate;
     };
+
+    /** 
+     * @private 
+     * @memberOf OnNextPredicate#
+     */    
     OnNextPredicate.prototype.equals = function (other) {
         if (other === this) { return true; }
         if (other == null) { return false; }
@@ -72,9 +67,18 @@ and limitations under the License.
         return this.predicate(other.value);
     };
 
+    /** 
+     * @private 
+     * @constructor
+     */
     function OnErrorPredicate(predicate) {
         this.predicate = predicate;
     };
+
+    /** 
+     * @private 
+     * @memberOf OnErrorPredicate#
+     */       
     OnErrorPredicate.prototype.equals = function (other) {
         if (other === this) { return true; }
         if (other == null) { return false; }
@@ -82,81 +86,194 @@ and limitations under the License.
         return this.predicate(other.exception);
     };
 
-    var ReactiveTest = root.ReactiveTest = {
+    /** 
+     * @static
+     * type Object
+     */
+    var ReactiveTest = Rx.ReactiveTest = {
+        /** Default virtual time used for creation of observable sequences in unit tests. */
         created: 100,
+        /** Default virtual time used to subscribe to observable sequences in unit tests. */
         subscribed: 200,
+        /** Default virtual time used to dispose subscriptions in <see cref="ReactiveTest"/>-based unit tests. */
         disposed: 1000,
+
+        /**
+         * Factory method for an OnNext notification record at a given time with a given value or a predicate function.
+         * 
+         * 1 - ReactiveTest.onNext(200, 42);
+         * 2 - ReactiveTest.onNext(200, function (x) { return x.length == 2; });
+         * 
+         * @param ticks Recorded virtual time the OnNext notification occurs.
+         * @param value Recorded value stored in the OnNext notification or a predicate.
+         * @return Recorded OnNext notification.
+         */
         onNext: function (ticks, value) {
             if (typeof value === 'function') {
                 return new Recorded(ticks, new OnNextPredicate(value));
             }
             return new Recorded(ticks, Notification.createOnNext(value));
         },
+        /**
+         * Factory method for an OnError notification record at a given time with a given error.
+         * 
+         * 1 - ReactiveTest.onNext(200, new Error('error'));
+         * 2 - ReactiveTest.onNext(200, function (e) { return e.message === 'error'; });
+         * 
+         * @param ticks Recorded virtual time the OnError notification occurs.
+         * @param exception Recorded exception stored in the OnError notification.
+         * @return Recorded OnError notification. 
+         */      
         onError: function (ticks, exception) {
             if (typeof exception === 'function') {
                 return new Recorded(ticks, new OnErrorPredicate(exception));
             }
             return new Recorded(ticks, Notification.createOnError(exception));
         },
+        /**
+         * Factory method for an OnCompleted notification record at a given time.
+         * 
+         * @param ticks Recorded virtual time the OnCompleted notification occurs.
+         * @return Recorded OnCompleted notification.
+         */
         onCompleted: function (ticks) {
             return new Recorded(ticks, Notification.createOnCompleted());
         },
+        /**
+         * Factory method for a subscription record based on a given subscription and disposal time.
+         * 
+         * @param start Virtual time indicating when the subscription was created.
+         * @param end Virtual time indicating when the subscription was disposed.
+         * @return Subscription object.
+         */
         subscribe: function (start, end) {
             return new Subscription(start, end);
         }
     };
 
-    var Recorded = root.Recorded = function (time, value, comparer) {
+    /**
+     * Creates a new object recording the production of the specified value at the given virtual time.
+     *
+     * @constructor
+     * @param {Number} time Virtual time the value was produced on.
+     * @param {Mixed} value Value that was produced.
+     * @param {Function} comparer An optional comparer.
+     */
+    var Recorded = Rx.Recorded = function (time, value, comparer) {
         this.time = time;
         this.value = value;
         this.comparer = comparer || defaultComparer;
     };
+
+    /**
+     * Checks whether the given recorded object is equal to the current instance.
+     *
+     * @param {Recorded} other Recorded object to check for equality.
+     * @returns {Boolean} true if both objects are equal; false otherwise.  
+     */  
     Recorded.prototype.equals = function (other) {
         return this.time === other.time && this.comparer(this.value, other.value);
     };
+
+    /**
+     * Returns a string representation of the current Recorded value.
+     *
+     * @returns {String} String representation of the current Recorded value. 
+     */   
     Recorded.prototype.toString = function () {
         return this.value.toString() + '@' + this.time;
     };
 
-    var Subscription = root.Subscription = function (start, end) {
+    /**
+     * Creates a new subscription object with the given virtual subscription and unsubscription time.
+     * 
+     * @constructor
+     * @param {Number} subscribe Virtual time at which the subscription occurred.
+     * @param {Number} unsubscribe Virtual time at which the unsubscription occurred.
+     */
+    var Subscription = Rx.Subscription = function (start, end) {
         this.subscribe = start;
         this.unsubscribe = end || Number.MAX_VALUE;
     };
+
+    /**
+     * Checks whether the given subscription is equal to the current instance.
+     * @param other Subscription object to check for equality.
+     * @returns {Boolean} true if both objects are equal; false otherwise.
+     */
     Subscription.prototype.equals = function (other) {
         return this.subscribe === other.subscribe && this.unsubscribe === other.unsubscribe;
     };
+
+    /**
+     * Returns a string representation of the current Subscription value.
+     * @returns {String} String representation of the current Subscription value.
+     */
     Subscription.prototype.toString = function () {
         return '(' + this.subscribe + ', ' + this.unsubscribe === Number.MAX_VALUE ? 'Infinite' : this.unsubscribe + ')';
     };
 
-    var MockDisposable = root.MockDisposable = function (scheduler) {
+    /** @private */
+    var MockDisposable = Rx.MockDisposable = function (scheduler) {
         this.scheduler = scheduler;
         this.disposes = [];
         this.disposes.push(this.scheduler.clock);
     };
+
+    /*
+     * @memberOf MockDisposable#
+     * @prviate
+     */
     MockDisposable.prototype.dispose = function () {
         this.disposes.push(this.scheduler.clock);
     };
 
-    var MockObserver = (function () {
-        inherits(MockObserver, Observer);
+    /** @private */
+    var MockObserver = (function (_super) {
+        inherits(MockObserver, _super);
+
+        /*
+         * @constructor
+         * @prviate
+         */
         function MockObserver(scheduler) {
+            _super.call(this);
             this.scheduler = scheduler;
             this.messages = [];
         }
-        MockObserver.prototype.onNext = function (value) {
+
+        var MockObserverPrototype = MockObserver.prototype;
+
+        /*
+         * @memberOf MockObserverPrototype#
+         * @prviate
+         */
+        MockObserverPrototype.onNext = function (value) {
             this.messages.push(new Recorded(this.scheduler.clock, Notification.createOnNext(value)));
         };
-        MockObserver.prototype.onError = function (exception) {
+
+        /*
+         * @memberOf MockObserverPrototype#
+         * @prviate
+         */
+        MockObserverPrototype.onError = function (exception) {
             this.messages.push(new Recorded(this.scheduler.clock, Notification.createOnError(exception)));
         };
-        MockObserver.prototype.onCompleted = function () {
+
+        /*
+         * @memberOf MockObserverPrototype#
+         * @prviate
+         */
+        MockObserverPrototype.onCompleted = function () {
             this.messages.push(new Recorded(this.scheduler.clock, Notification.createOnCompleted()));
         };
-        return MockObserver;
-    })();
 
-    var HotObservable = (function () {
+        return MockObserver;
+    })(Observer);
+
+    /** @private */    
+    var HotObservable = (function (_super) {
+
         function subscribe(observer) {
             var observable = this;
             this.observers.push(observer);
@@ -169,9 +286,14 @@ and limitations under the License.
             });
         }
 
-        inherits(HotObservable, Observable);
+        inherits(HotObservable, _super);
+
+        /**
+         * @private
+         * @constructor
+         */
         function HotObservable(scheduler, messages) {
-            HotObservable.super_.constructor.call(this, subscribe);
+            _super.call(this, subscribe);
             var message, notification, observable = this;
             this.scheduler = scheduler;
             this.messages = messages;
@@ -192,9 +314,11 @@ and limitations under the License.
         }
 
         return HotObservable;
-    })();
+    })(Observable);
 
-    var ColdObservable = (function () {
+    /** @private */
+    var ColdObservable = (function (_super) {
+
         function subscribe(observer) {
             var message, notification, observable = this;
             this.subscriptions.push(new Subscription(this.scheduler.clock));
@@ -216,38 +340,82 @@ and limitations under the License.
             });
         }
 
-        inherits(ColdObservable, Observable);
+        inherits(ColdObservable, _super);
+
+        /**
+         * @private
+         * @constructor
+         */
         function ColdObservable(scheduler, messages) {
-            ColdObservable.super_.constructor.call(this, subscribe);
+            _super.call(this, subscribe);
             this.scheduler = scheduler;
             this.messages = messages;
             this.subscriptions = [];
         }
 
         return ColdObservable;
-    })();
+    })(Observable);
 
-    root.TestScheduler = (function () {
-        inherits(TestScheduler, VirtualTimeScheduler);
+    /** Virtual time scheduler used for testing applications and libraries built using Reactive Extensions. */
+    Rx.TestScheduler = (function (_super) {
+        inherits(TestScheduler, _super);
+
+        /** @constructor */
         function TestScheduler() {
-            TestScheduler.super_.constructor.call(this, 0, function (a, b) { return a - b; });
+            _super.call(this, 0, function (a, b) { return a - b; });
         }
 
+        /**
+         * Schedules an action to be executed at the specified virtual time.
+         * 
+         * @param state State passed to the action to be executed.
+         * @param dueTime Absolute virtual time at which to execute the action.
+         * @param action Action to be executed.
+         * @return Disposable object used to cancel the scheduled action (best effort).
+         */
         TestScheduler.prototype.scheduleAbsoluteWithState = function (state, dueTime, action) {
             if (dueTime <= this.clock) {
                 dueTime = this.clock + 1;
             }
-            return TestScheduler.super_.scheduleAbsoluteWithState.call(this, state, dueTime, action);
+            return _super.prototype.scheduleAbsoluteWithState.call(this, state, dueTime, action);
         };
+        /**
+         * Adds a relative virtual time to an absolute virtual time value.
+         * 
+         * @param absolute Absolute virtual time value.
+         * @param relative Relative virtual time value to add.
+         * @return Resulting absolute virtual time sum value.
+         */
         TestScheduler.prototype.add = function (absolute, relative) {
             return absolute + relative;
         };
+        /**
+         * Converts the absolute virtual time value to a DateTimeOffset value.
+         * 
+         * @param absolute Absolute virtual time value to convert.
+         * @return Corresponding DateTimeOffset value.
+         */
         TestScheduler.prototype.toDateTimeOffset = function (absolute) {
             return new Date(absolute).getTime();
         };
+        /**
+         * Converts the TimeSpan value to a relative virtual time value.
+         * 
+         * @param timeSpan TimeSpan value to convert.
+         * @return Corresponding relative virtual time value.
+         */
         TestScheduler.prototype.toRelative = function (timeSpan) {
             return timeSpan;
         };
+        /**
+         * Starts the test scheduler and uses the specified virtual times to invoke the factory function, subscribe to the resulting sequence, and dispose the subscription.
+         * 
+         * @param create Factory method to create an observable sequence.
+         * @param created Virtual time at which to invoke the factory to create an observable sequence.
+         * @param subscribed Virtual time at which to subscribe to the created observable sequence.
+         * @param disposed Virtual time at which to dispose the subscription.
+         * @return Observer with timestamped recordings of notification messages that were received during the virtual time window when the subscription to the source sequence was active.
+         */        
         TestScheduler.prototype.startWithTiming = function (create, created, subscribed, disposed) {
             var observer = this.createObserver(), source, subscription;
             this.scheduleAbsoluteWithState(null, created, function () {
@@ -265,26 +433,57 @@ and limitations under the License.
             this.start();
             return observer;
         };
+        /**
+         * Starts the test scheduler and uses the specified virtual time to dispose the subscription to the sequence obtained through the factory function.
+         * Default virtual times are used for factory invocation and sequence subscription.
+         * 
+         * @param create Factory method to create an observable sequence.
+         * @param disposed Virtual time at which to dispose the subscription.
+         * @return Observer with timestamped recordings of notification messages that were received during the virtual time window when the subscription to the source sequence was active.
+         */        
         TestScheduler.prototype.startWithDispose = function (create, disposed) {
             return this.startWithTiming(create, ReactiveTest.created, ReactiveTest.subscribed, disposed);
         };
+        /**
+         * Starts the test scheduler and uses default virtual times to invoke the factory function, to subscribe to the resulting sequence, and to dispose the subscription</see>.
+         * 
+         * @param create Factory method to create an observable sequence.
+         * @return Observer with timestamped recordings of notification messages that were received during the virtual time window when the subscription to the source sequence was active.
+         */        
         TestScheduler.prototype.startWithCreate = function (create) {
             return this.startWithTiming(create, ReactiveTest.created, ReactiveTest.subscribed, ReactiveTest.disposed);
         };
+        /**
+         * Creates a hot observable using the specified timestamped notification messages either as an array or arguments.
+         * 
+         * @param messages Notifications to surface through the created sequence at their specified absolute virtual times.
+         * @return Hot observable sequence that can be used to assert the timing of subscriptions and notifications.
+         */        
         TestScheduler.prototype.createHotObservable = function () {
             var messages = argsOrArray(arguments, 0);
             return new HotObservable(this, messages);
         };
+        /**
+         * Creates a cold observable using the specified timestamped notification messages either as an array or arguments.
+         * 
+         * @param messages Notifications to surface through the created sequence at their specified virtual time offsets from the sequence subscription time.
+         * @return Cold observable sequence that can be used to assert the timing of subscriptions and notifications.
+         */        
         TestScheduler.prototype.createColdObservable = function () {
             var messages = argsOrArray(arguments, 0);
             return new ColdObservable(this, messages);
         };
+        /**
+         * Creates an observer that records received notification messages and timestamps those.
+         * 
+         * @return Observer that can be used to assert the timing of received notifications.
+         */
         TestScheduler.prototype.createObserver = function () {
             return new MockObserver(this);
         };
 
         return TestScheduler;
-    })();
+    })(VirtualTimeScheduler);
 
-    return root;
+    return Rx;
 }));

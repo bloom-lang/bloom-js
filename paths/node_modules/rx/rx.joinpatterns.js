@@ -1,25 +1,12 @@
-/*
-
-Copyright (c) Microsoft Open Technologies, Inc.  All rights reserved.
-Microsoft Open Technologies would like to thank its contributors, a list
-of whom are at http://aspnetwebstack.codeplex.com/wikipage?title=Contributors.
-
-Licensed under the Apache License, Version 2.0 (the "License"); you
-may not use this file except in compliance with the License. You may
-obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions
-and limitations under the License.
-*/
+// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
 
 (function (root, factory) {
-    var freeExports = typeof exports == 'object' && exports &&
-    (typeof root == 'object' && root && root == root.global && (window = root), exports);
+    var freeExports = typeof exports == 'object' && exports,
+        freeModule = typeof module == 'object' && module && module.exports == freeExports && module,
+        freeGlobal = typeof global == 'object' && global;
+    if (freeGlobal.global === freeGlobal) {
+        window = freeGlobal;
+    }
 
     // Because of build optimizers
     if (typeof define === 'function' && define.amd) {
@@ -27,29 +14,29 @@ and limitations under the License.
             root.Rx = factory(root, exports, Rx);
             return root.Rx;
         });
-    } else if (typeof module == 'object' && module && module.exports == freeExports) {
+    } else if (typeof module === 'object' && module && module.exports === freeExports) {
         module.exports = factory(root, module.exports, require('./rx'));
     } else {
         root.Rx = factory(root, {}, root.Rx);
     }
-}(this, function (global, exp, root, undefined) {
+}(this, function (global, exp, Rx, undefined) {
     
     // Aliases
-    var Observable = root.Observable,
+    var Observable = Rx.Observable,
         observableProto = Observable.prototype,
-        AnonymousObservable = root.Internals.AnonymousObservable,
+        AnonymousObservable = Rx.Internals.AnonymousObservable,
         observableThrow = Observable.throwException,
-        observerCreate = root.Observer.create,
-        SingleAssignmentDisposable = root.SingleAssignmentDisposable,
-        CompositeDisposable = root.CompositeDisposable,
-        AbstractObserver = root.Internals.AbstractObserver;
+        observerCreate = Rx.Observer.create,
+        SingleAssignmentDisposable = Rx.SingleAssignmentDisposable,
+        CompositeDisposable = Rx.CompositeDisposable,
+        AbstractObserver = Rx.Internals.AbstractObserver;
 
     // Defaults
     function defaultComparer(x, y) { return x === y; }
     function noop() { }
 
     // Utilities
-    var inherits = root.Internals.inherits;
+    var inherits = Rx.Internals.inherits;
     var slice = Array.prototype.slice;
     function argsOrArray(args, idx) {
         return args.length === 1 && Array.isArray(args[idx]) ?
@@ -57,13 +44,22 @@ and limitations under the License.
             slice.call(args);
     }
 
-    // TODO: Replace with a real Map once finalized
+    /** @private */
     var Map = (function () {
+
+        /**
+         * @constructor
+         * @private
+         */
         function Map() {
             this.keys = [];
             this.values = [];
         }
 
+        /**
+         * @private
+         * @memberOf Map#
+         */
         Map.prototype['delete'] = function (key) {
             var i = this.keys.indexOf(key);
             if (i !== -1) {
@@ -73,11 +69,19 @@ and limitations under the License.
             return i !== -1;
         };
 
+        /**
+         * @private
+         * @memberOf Map#
+         */
         Map.prototype.get = function (key, fallback) {
             var i = this.keys.indexOf(key);
             return i !== -1 ? this.values[i] : fallback;
         };
 
+        /**
+         * @private
+         * @memberOf Map#
+         */
         Map.prototype.set = function (key, value) {
             var i = this.keys.indexOf(key);
             if (i !== -1) {
@@ -86,25 +90,61 @@ and limitations under the License.
             this.values[this.keys.push(key) - 1] = value;
         };
 
+        /**
+         * @private
+         * @memberOf Map#
+         */
         Map.prototype.size = function () { return this.keys.length; };
+
+        /**
+         * @private
+         * @memberOf Map#
+         */        
         Map.prototype.has = function (key) {
             return this.keys.indexOf(key) !== -1;
         };
+
+        /**
+         * @private
+         * @memberOf Map#
+         */        
         Map.prototype.getKeys = function () { return this.keys.slice(0); };
+
+        /**
+         * @private
+         * @memberOf Map#
+         */        
         Map.prototype.getValues = function () { return this.values.slice(0); };
 
         return Map;
     }());
 
-    // Pattern
+    /**
+     * @constructor
+     * Represents a join pattern over observable sequences.
+     */
     function Pattern(patterns) {
         this.patterns = patterns;
     }
+
+    /**
+     *  Creates a pattern that matches the current plan matches and when the specified observable sequences has an available value.
+     *  
+     *  @param other Observable sequence to match in addition to the current pattern.
+     *  @return Pattern object that matches when all observable sequences in the pattern have an available value.   
+     */ 
     Pattern.prototype.and = function (other) {
         var patterns = this.patterns.slice(0);
         patterns.push(other);
         return new Pattern(patterns);
     };
+
+    /**
+     *  Matches when all observable sequences in the pattern (specified using a chain of and operators) have an available value and projects the values.
+     *  
+     *  @param selector Selector that will be invoked with available values from the source sequences, in the same order of the sequences in the pattern.
+     *  @return Plan that produces the projected values, to be fed (with other plans) to the when operator.
+     */
     Pattern.prototype.then = function (selector) {
         return new Plan(this, selector);
     };
@@ -200,13 +240,17 @@ and limitations under the License.
         }
     };
 
-    // Join Observer
-    var JoinObserver = (function () {
+    /** @private */
+    var JoinObserver = (function (_super) {
 
-        inherits(JoinObserver, AbstractObserver);
+        inherits(JoinObserver, _super);
 
+        /**
+         * @constructor
+         * @private
+         */
         function JoinObserver(source, onError) {
-            JoinObserver.super_.constructor.call(this);
+            _super.call(this);
             this.source = source;
             this.onError = onError;
             this.queue = [];
@@ -215,7 +259,13 @@ and limitations under the License.
             this.isDisposed = false;
         }
 
-        JoinObserver.prototype.next = function (notification) {
+        var JoinObserverPrototype = JoinObserver.prototype;
+
+        /**
+         * @memberOf JoinObserver#
+         * @private
+         */
+        JoinObserverPrototype.next = function (notification) {
             if (!this.isDisposed) {
                 if (notification.kind === 'E') {
                     this.onError(notification.exception);
@@ -228,39 +278,90 @@ and limitations under the License.
                 }
             }
         };
-        JoinObserver.prototype.error = noop;
-        JoinObserver.prototype.completed = noop;
 
-        JoinObserver.prototype.addActivePlan = function (activePlan) {
+        /**
+         * @memberOf JoinObserver#
+         * @private
+         */        
+        JoinObserverPrototype.error = noop;
+
+        /**
+         * @memberOf JoinObserver#
+         * @private
+         */        
+        JoinObserverPrototype.completed = noop;
+
+        /**
+         * @memberOf JoinObserver#
+         * @private
+         */
+        JoinObserverPrototype.addActivePlan = function (activePlan) {
             this.activePlans.push(activePlan);
         };
-        JoinObserver.prototype.subscribe = function () {
+
+        /**
+         * @memberOf JoinObserver#
+         * @private
+         */        
+        JoinObserverPrototype.subscribe = function () {
             this.subscription.disposable(this.source.materialize().subscribe(this));
         };
-        JoinObserver.prototype.removeActivePlan = function (activePlan) {
+
+        /**
+         * @memberOf JoinObserver#
+         * @private
+         */        
+        JoinObserverPrototype.removeActivePlan = function (activePlan) {
             var idx = this.activePlans.indexOf(activePlan);
             this.activePlans.splice(idx, 1);
             if (this.activePlans.length === 0) {
                 this.dispose();
             }
         };
-        JoinObserver.prototype.dispose = function () {
-            JoinObserver.super_.dispose.call(this);
+
+        /**
+         * @memberOf JoinObserver#
+         * @private
+         */        
+        JoinObserverPrototype.dispose = function () {
+            _super.prototype.dispose.call(this);
             if (!this.isDisposed) {
                 this.isDisposed = true;
                 this.subscription.dispose();
             }
         };
+        
         return JoinObserver;
-    } ());
+    } (AbstractObserver));
 
     // Observable extensions
+    
+    /**
+     *  Creates a pattern that matches when both observable sequences have an available value.
+     *  
+     *  @param right Observable sequence to match with the current sequence.</param>
+     *  @return {Pattern} Pattern object that matches when both observable sequences have an available value.     
+     */
     observableProto.and = function (right) {
         return new Pattern([this, right]);
     };
+
+    /**
+     *  Matches when the observable sequence has an available value and projects the value.
+     *  
+     *  @param selector Selector that will be invoked for values in the source sequence.</param>
+     *  @returns {Plan} Plan that produces the projected values, to be fed (with other plans) to the when operator. 
+     */    
     observableProto.then = function (selector) {
         return new Pattern([this]).then(selector);
     };
+
+    /**
+     *  Joins together the results from several patterns.
+     *  
+     *  @param plans A series of plans (specified as an Array of as a series of arguments) created by use of the Then operator on patterns.</param>
+     *  @returns {Observable} Observable sequence with the results form matching several patterns. 
+     */
     Observable.when = function () {
         var plans = argsOrArray(arguments, 0);
         return new AnonymousObservable(function (observer) {
@@ -302,5 +403,5 @@ and limitations under the License.
         });
     };
 
-    return root;
+    return Rx;
 }));
