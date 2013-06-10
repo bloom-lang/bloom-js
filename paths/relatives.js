@@ -1,5 +1,5 @@
 var Rx = require('rx');
-var util = require('./util');
+var util = require('./oldutil');
 
 var evalFunc = function(tables, newTables) {
   var forever = function() {

@@ -1,7 +1,11 @@
-var Ix = require('ix');
-var util = require('./util');
+var Rx = require('rx');
+var util = require('./oldutil');
 
 var evalFunc = function(tables, newTables) {
+  var forever = function() {
+    return Rx.Observable.never();
+  };
+
   var links = tables['links'];
   var paths = tables['paths'];
   var newLinks = newTables['links'];
@@ -14,21 +18,21 @@ var evalFunc = function(tables, newTables) {
       nxt: link.to,
       cost: link.cost
     };
-  }).concat(newPaths).distinct(util.cmpJSON);
+  }).concat(newPaths).distinct(JSON.stringify);
 
-  newPaths = links.join(
-    paths,
-    function(link) { return link.to; },
-    function(path) { return path.from; },
-    function(link, path) {
-      return {
-        from: link.from,
-        to: path.to,
-        nxt: link.to,
-        cost: link.cost + path.cost
-      };
+  newPaths = links.join(paths, forever, forever, function(link, path) {
+    if (link.to !== path.from) {
+      return null;
     }
-  ).concat(newPaths).distinct(util.cmpJSON);
+    return {
+      from: link.from,
+      to: path.to,
+      nxt: link.to,
+      cost: link.cost + path.cost
+    };
+  }).where(function(path) {
+    return path !== null;
+  }).concat(newPaths).distinct(JSON.stringify);
 
   return {
     links: newLinks,
@@ -42,20 +46,20 @@ var initLinks = [
   {from: 'b', to: 'c', cost: 1},
   {from: 'c', to: 'd', cost: 1},
   {from: 'd', to: 'e', cost: 1}
-];
+]
 
 /*
-   var initLinks = [
-   {from: 'a', to: 'b', cost: 1},
-   {from: 'a', to: 'c', cost: 1},
-   {from: 'c', to: 'b', cost: 2},
-   {from: 'b', to: 'd', cost: 1}
-   ];
-   */
+var initLinks = [
+  {from: 'a', to: 'b', cost: 1},
+  {from: 'a', to: 'c', cost: 1},
+  {from: 'c', to: 'b', cost: 2},
+  {from: 'b', to: 'd', cost: 1}
+];
+*/
 
 var tables = {};
-tables['links'] = Ix.Enumerable.fromArray(initLinks);
-tables['paths'] = Ix.Enumerable.empty();
+tables['links'] = Rx.Observable.fromArray(initLinks);
+tables['paths'] = Rx.Observable.empty();
 
-console.log(util.seminaiveEval(tables, evalFunc)['paths'].toArray());
+util.seminaiveEval(tables, evalFunc)['paths'].subscribe(console.log);
 

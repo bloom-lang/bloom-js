@@ -1,4 +1,5 @@
 var BloomCollection = require('./BloomCollection');
+var cmpObj = require('./util').cmpObj;
 
 var Bloom = function() {
   this._collections = {};
@@ -26,10 +27,7 @@ prototype.op = function(type, lhs, rhs) {
   });
 };
 
-var cmpJSON = function(x, y) {
-  return JSON.stringify(x) === JSON.stringify(y);
-};
-
+/* Naive Evaluation
 prototype.tick = function() {
   var self = this;
   do {
@@ -40,7 +38,7 @@ prototype.tick = function() {
       if (op.type === '<=') {
         op.lhs._newData = op.rhs.getData().
           concat(op.lhs._newData).
-          distinct(cmpJSON);
+          distinct(cmpObj);
       }
     });
     var allSame = true;
@@ -59,5 +57,31 @@ prototype.tick = function() {
     console.log(name, this._collections[name]._data.toArray());
   }
 };
+*/
+
+prototype.tick = function() {
+  var self = this;
+  do {
+    this._ops.forEach(function(op) {
+      if (op.type === '<=') {
+        op.lhs._newData = op.rhs.getDelta().concat(op.lhs._newData);
+      }
+    });
+    var allEmpty = true;
+    for (var name in this._collections) {
+      var collection = this._collections[name];
+      collection._data = collection._data.concat(collection._delta);
+      collection._delta = collection._newData.except(collection._data, cmpObj);
+      if (collection._delta.count() !== 0) {
+        allEmpty = false;
+      }
+    }
+  } while (!allEmpty);
+
+  for (var name in this._collections) {
+    console.log(name, this._collections[name]._data.toArray());
+  }
+};
 
 module.exports = Bloom;
+
