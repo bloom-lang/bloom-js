@@ -41,19 +41,29 @@ prototype.select = function(fn) {
   });
 };
 
+prototype.where = function(fn) {
+  var self = this;
+  return genTempCollection(function() {
+    return self.getData().where(fn);
+  }, function() {
+    return self.getDelta().where(fn);
+  });
+};
+
 prototype.join = function(innerCollection, outerFn, innerFn, joinFn) {
   var self = this;
   return genTempCollection(function() {
     return self.getData().join(innerCollection.getData(), outerFn,
                                     innerFn, joinFn);
   }, function() {
-    var a = self.getDelta().join(innerCollection.getDelta(), outerFn,
-                                 innerFn, joinFn);
-    var b = self.getDelta().join(innerCollection.getData(), outerFn,
-                                 innerFn, joinFn);
-    var c = self.getData().join(innerCollection.getDelta(), outerFn,
-                                innerFn, joinFn);
-    return a.union(b, cmpObj).union(c, cmpObj);
+    var outerDelta = self.getDelta();
+    var innerDelta = innerCollection.getDelta();
+    var outerData = self.getData();
+    var innerData = innerCollection.getData();
+    var a = outerDelta.join(innerDelta, outerFn, innerFn, joinFn);
+    var b = outerDelta.join(innerData, outerFn, innerFn, joinFn);
+    var c = outerData.join(innerDelta, outerFn, innerFn, joinFn);
+    return a.concat(b).concat(c);
   });
 };
 

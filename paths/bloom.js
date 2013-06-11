@@ -1,3 +1,4 @@
+var Ix = require('ix');
 var BloomCollection = require('./BloomCollection');
 var cmpObj = require('./util').cmpObj;
 
@@ -8,7 +9,7 @@ var Bloom = function() {
 
 var prototype = Bloom.prototype;
 
-prototype.addCollection = function(type, name, keys, vals, initArr) {
+prototype.addCollection = function(name, type, keys, vals, initArr) {
   if (keys === undefined) {
     keys = type === 'channel' ? ['@address', 'val'] : ['key'];
   }
@@ -27,7 +28,8 @@ prototype.op = function(type, lhs, rhs) {
   });
 };
 
-/* Naive Evaluation
+/*
+// Naive Evaluation
 prototype.tick = function() {
   var self = this;
   do {
@@ -36,9 +38,9 @@ prototype.tick = function() {
     }
     this._ops.forEach(function(op) {
       if (op.type === '<=') {
-        op.lhs._newData = op.rhs.getData().
-          concat(op.lhs._newData).
-          distinct(cmpObj);
+        op.lhs._newData = Ix.Enumerable.fromArray(
+          op.rhs.getData().union(op.lhs._newData, cmpObj).toArray()
+        );
       }
     });
     var allSame = true;
@@ -56,22 +58,28 @@ prototype.tick = function() {
   for (var name in this._collections) {
     console.log(name, this._collections[name]._data.toArray());
   }
-};
-*/
+};*/
 
+// Seminaive Evaluation
 prototype.tick = function() {
   var self = this;
   do {
     this._ops.forEach(function(op) {
       if (op.type === '<=') {
-        op.lhs._newData = op.rhs.getDelta().concat(op.lhs._newData);
+        op.lhs._newData = Ix.Enumerable.fromArray(
+          op.rhs.getDelta().union(op.lhs._newData, cmpObj).toArray()
+        );
       }
     });
     var allEmpty = true;
     for (var name in this._collections) {
       var collection = this._collections[name];
-      collection._data = collection._data.concat(collection._delta);
-      collection._delta = collection._newData.except(collection._data, cmpObj);
+      collection._data = Ix.Enumerable.fromArray(
+        collection._data.concat(collection._delta).toArray()
+      );
+      collection._delta = Ix.Enumerable.fromArray(
+        collection._newData.except(collection._data, cmpObj).toArray()
+      );
       if (collection._delta.count() !== 0) {
         allEmpty = false;
       }
