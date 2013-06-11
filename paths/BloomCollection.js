@@ -40,6 +40,7 @@ prototype.select = function(fn) {
     return self.getDelta().select(fn);
   });
 };
+prototype.map = prototype.select;
 
 prototype.where = function(fn) {
   var self = this;
@@ -49,6 +50,7 @@ prototype.where = function(fn) {
     return self.getDelta().where(fn);
   });
 };
+prototype.filter = prototype.where;
 
 prototype.join = function(innerCollection, outerFn, innerFn, joinFn) {
   var self = this;
@@ -63,7 +65,7 @@ prototype.join = function(innerCollection, outerFn, innerFn, joinFn) {
     var a = outerDelta.join(innerDelta, outerFn, innerFn, joinFn);
     var b = outerDelta.join(innerData, outerFn, innerFn, joinFn);
     var c = outerData.join(innerDelta, outerFn, innerFn, joinFn);
-    return a.concat(b).concat(c);
+    return a.union(b, cmpObj).union(c, cmpObj);
   });
 };
 
