@@ -6,7 +6,12 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 
 %%
 
-\s+                       /* skip whitespace */
+[ \t\r]*'require'.*\n+    { /* ignore require statements */ }
+[ \t\r]*'include'.*\n+    { /* ignore include statements */ }
+'\\'[ \t\r]*('#'.*)?(\n)  { /* backslash concatenates lines, skip comments */ }
+([ \t\r]*('#'.*)?\n)+     return '\n' // skip comments and blank lines
+\s+                       { /* skip whitespace other than newline */ }
+'class'                   return 'CLASS'
 'state'                   return 'STATE'
 'bloom'                   return 'BLOOM'
 'table'                   return 'TABLE'
@@ -17,64 +22,88 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 'periodic'                return 'PERIODIC'
 'do'                      return 'DO'
 'end'                     return 'END'
+'puts'                    return 'PUTS'
+{id}                      return 'ID'
 {string}                  return 'STR_LIT'
 {number}                  return 'NUM_LIT'
-{id}                      return 'ID'
-<<EOF>>                   return 'EOF'
+('#'.*)?<<EOF>>           return 'EOF'
+'=>'                      return '=>'
+'<:'                      return '<:'
+'<~'                      return '<~'
+'<+-'                     return '<+-'
+'<+'                      return '<+'
+'<-'                      return '<-'
+'=='                      return '=='
+'!='                      return '!='
+'<='                      return '<='
+'>='                      return '>='
+'<'                       return '<'
+'>'                       return '>'
+'='                       return '='
+'**'                      return '**'
+'%'                       return '%'
+'*'                       return '*'
+'/'                       return '/'
+'+'                       return '+'
+'-'                       return '-'
 '.'                       return '.'
 ','                       return ','
 ':'                       return ':'
+'|'                       return '|'
 '('                       return '('
 ')'                       return ')'
 '['                       return '['
 ']'                       return ']'
 '{'                       return '{'
 '}'                       return '}'
-'=>'                      return '=>'
-'<='                      return '<='
-'<~'                      return '<~'
-'<+-'                     return '<+-'
-'<+'                      return '<+'
-'<-'                      return '<-'
 .                         return 'INVALID'
 
 /lex
 
-/* operator associations and precedence */
-
-%left '+' '-'
-%left '*' '/'
-%left '^'
-%right '!'
-%right '%'
-%left UMINUS
 
 %start program
 %ebnf
 %% /* language grammar */
 
 program
-    : state_block? bloom_block? EOF
-      { return ast.program($1, $2); }
+    : '\n'* (outer_stmt ('\n'|EOF))* EOF?
+      { console.log(JSON.stringify(ast.program($2), null, 2));
+        return ast.program($2); }
+    ;
+
+outer_stmt
+    : class_block
+    | simple_stmt
+    ;
+
+class_block
+    : CLASS ID '\n' (class_stmt '\n')* END
+      -> ast.classBlock($4)
+    ;
+
+class_stmt
+    : state_block
+    | bloom_block
+    | simple_stmt
     ;
 
 state_block
-    : STATE DO state_decl* END
-      -> ast.stateBlock($3)
+    : STATE DO '\n' (state_decl '\n')* END
+      -> ast.stateBlock($4)
     ;
 
 state_decl
-    : CHANNEL ID
+    : CHANNEL primary
       -> ast.stateDecl($1, $2, ['@address', 'val'], [])
-    | CHANNEL ID ',' field_list
+    | CHANNEL primary ',' field_list
       -> ast.stateDecl($1, $2, $4, [])
-    | CHANNEL ID ',' field_list '=>' field_list
+    | CHANNEL primary ',' field_list '=>' field_list
       -> ast.stateDecl($1, $2, $4, $6)
-    | collection_type ID
+    | collection_type primary
       -> ast.stateDecl($1, $2, ['key'], ['val'])
-    | collection_type ID ',' field_list
-      -> ast.stateDecl($1, $2, $4, ['val'])
-    | collection_type ID ',' field_list '=>' field_list
+    | collection_type primary ',' field_list
+      -> ast.stateDecl($1, $2, $4, [])
+    | collection_type primary ',' field_list '=>' field_list
       -> ast.stateDecl($1, $2, $4, $6)
     ;
 
@@ -87,53 +116,91 @@ collection_type
     ;
 
 field_list
-    : '[' (ID ',')* ID? ']'
+    : '[' (primary ',')* primary? ']'
       -> $3 === undefined ? $2 : $2.concat([$3])
     ;
 
 bloom_block
-    : BLOOM DO bloom_stmt* END
-      -> ast.bloomBlock($3)
+    : BLOOM ID? DO '\n' (bloom_stmt '\n')* END
+      -> ast.bloomBlock($2, $5)
     ;
 
 bloom_stmt
-    : ID bloom_op primary
+    : expression bloom_op primary
       -> ast.bloomStmt($1, $2, $3)
     ;
 
 bloom_op
-    : '<='
+    : '<:'
     | '<~'
     | '<+-'
     | '<+'
     | '<-'
     ;
 
-/* JAVASCRIPT PARSER */
+/* SIMPLE STATEMENT */
+
+simple_stmt
+    : expression
+    | assignment_stmt
+    | bloom_stmt
+    | puts_stmt
+    ;
+
+assignment_stmt
+    : ID '=' expression
+    ;
+
+puts_stmt
+    : PUTS expression_list
+    ;
+
+/* EXPRESSION */
 
 expression
     : or_test
     | or_test '?' expression ':' expression
+    | or_test 'if' or_test 'else' expression
     ;
 
 or_test
     : and_test
-    | or_test '||' and_test
+    | or_test ('||'|'or') and_test
     ;
 
 and_test
     : not_test
-    | and_test '&&' not_test
+    | and_test ('&&'|'and') not_test
     ;
 
 not_test
     : comparison
-    | '!' not_test
+    | ('!'|'not') not_test
     ;
 
 comparison
-    // TODO
+    : a_expr
+    | a_expr ('<'|'>'|'=='|'<='|'>='|'!=') comparison
+    ;
+
+a_expr
+    : m_expr
+    | a_expr ('+'|'-') m_expr
+    ;
+
+m_expr
+    : u_expr
+    | m_expr ('*'|'/'|'%') u_expr
+    ;
+
+u_expr
+    : power
+    | ('-'|'+') u_expr
+    ;
+
+power
     : primary
+    | primary '**' u_expr
     ;
 
 primary
@@ -142,10 +209,11 @@ primary
     | NUM_LIT
     | parenth_form
     | arr_display
-    | obj_display
-    | property_ref
+    | hash_display
+    | attribute_ref
     | subscription
     | call
+    | primary_block
     ;
 
 parenth_form
@@ -163,19 +231,19 @@ expression_list
       -> $2 === undefined ? $1 : $1.concat([$2])
     ;
 
-obj_display
+hash_display
     : '{' (kv_pair ',')* (kv_pair)? '}'
-      -> ast.objDisplay($3 === undefined ? $2 : $2.concat([$3]))
+      -> ast.hashDisplay($3 === undefined ? $2 : $2.concat([$3]))
     ;
 
 kv_pair
-    : expression ':' expression
+    : primary '=>' primary
       -> [$1, $3]
     ;
 
-property_ref
+attribute_ref
     : primary '.' ID
-      -> ast.propertyRef($1, $3)
+      -> ast.attributeRef($1, $3)
     ;
 
 subscription
@@ -186,6 +254,16 @@ subscription
 call
     : primary '(' expression_list ')'
       -> ast.call($1, $3)
+    ;
+
+primary_block
+    : primary '{' '|' id_list '|' simple_stmt '}'
+    | primary DO '|' id_list '|' '\n' (simple_stmt '\n')* END
+    ;
+
+id_list
+    : (ID ',')* ID?
+      -> $2 === undefined ? $1 : $1.concat([$2])
     ;
 
 %%

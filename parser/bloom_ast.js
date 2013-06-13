@@ -1,14 +1,14 @@
-exports.program = function(state_block, bloom_block) {
-  var blocks = [];
-  if (state_block !== undefined) {
-    blocks.push(state_block);
-  }
-  if (bloom_block !== undefined) {
-    blocks.push(bloom_block);
-  }
+exports.program = function(statements) {
   return {
     type: 'program',
-    blocks: blocks
+    statements: statements
+  };
+};
+
+exports.classBlock = function(statements) {
+  return {
+    type: 'class_block',
+    statements: statements
   };
 };
 
@@ -19,9 +19,10 @@ exports.stateBlock = function(stateDecls) {
   };
 };
 
-exports.bloomBlock = function(statements) {
+exports.bloomBlock = function(name, statements) {
   return {
     type: 'bloom_block',
+    name: name === undefined ? '' : name,
     statements: statements
   };
 };
@@ -53,19 +54,19 @@ exports.bloomStmt = function(destCollection, bloomOp, srcCollection) {
   };
 };
 
-exports.propertyRef = function(obj, property) {
+exports.attributeRef = function(obj, attribute) {
   return {
-    type: 'property_ref',
+    type: 'attribute_ref',
     obj: obj,
-    property: property
+    attribute: attribute
   };
 };
 
-exports.subscription = function(obj, property) {
+exports.subscription = function(obj, attribute) {
   return {
     type: 'subscription',
     obj: obj,
-    subscription: property
+    subscription: attribute
   };
 };
 
@@ -84,13 +85,19 @@ exports.arrDisplay = function(arr) {
   };
 };
 
-exports.objDisplay = function(kvPairs) {
-  var obj = {};
+exports.hashDisplay = function(kvPairs) {
+  var hash = {};
   kvPairs.forEach(function(kvPair) {
-    obj[kvPair[0]] = kvPair[1];
+    hash[kvPair[0]] = kvPair[1];
   });
   return {
-    type: 'obj_display',
-    obj: obj
+    type: 'hash_display',
+    hash: hash
+  };
+};
+
+exports.symbolLiteral = function(sym) {
+  return {
+    type: 'symbol_literal'
   };
 };
