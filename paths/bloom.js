@@ -2,10 +2,7 @@ var Ix = require('ix');
 var BloomCollection = require('./BloomCollection');
 var cmpObj = require('./util').cmpObj;
 
-var Bloom = function() {
-  this._collections = {};
-  this._ops = [];
-};
+var Bloom = function() { };
 
 var prototype = Bloom.prototype;
 
