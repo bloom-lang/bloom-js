@@ -6,18 +6,35 @@ var Bloom = function() { };
 
 var prototype = Bloom.prototype;
 
-prototype.addCollection = function(name, type, keys, vals, initArr) {
+prototype.addCollection = function(name, type, keys, vals) {
   if (keys === undefined) {
     keys = type === 'channel' ? ['@address', 'val'] : ['key'];
   }
   if (vals === undefined) {
     vals = type === 'channel' ? [] : ['val'];
   }
-  this._collections[name] = new BloomCollection(name, type, initArr);
+  this._collections[name] = new BloomCollection(name, type);
+  return this._collections[name];
+};
+
+prototype.genCollectionName = function() {
+  var count = 0;
+  while ('anon' + count in this._collections) {
+    count++;
+  }
+  return 'anon' + count;
+};
+
+prototype.addCollectionFromArray = function(arr) {
+  var name = this.genCollectionName();
+  this._collections[name] = new BloomCollection(name, 'init', arr);
   return this._collections[name];
 };
 
 prototype.op = function(type, lhs, rhs) {
+  if (rhs instanceof Array) {
+    rhs = this.addCollectionFromArray(rhs);
+  }
   this._ops.push({
     type: type,
     lhs: lhs,
