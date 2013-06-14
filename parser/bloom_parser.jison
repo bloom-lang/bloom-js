@@ -24,11 +24,11 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 'end'                     return 'END'
 'puts'                    return 'PUTS'
 {id}                      return 'ID'
-{string}                  return 'STR_LIT'
-{number}                  return 'NUM_LIT'
+{string}                  return 'STR_LITERAL'
+{number}                  return 'NUM_LITERAL'
 ('#'.*)?<<EOF>>           return 'EOF'
 '=>'                      return '=>'
-'<:'                      return '<:'
+':='                      return ':='
 '<~'                      return '<~'
 '<+-'                     return '<+-'
 '<+'                      return '<+'
@@ -67,8 +67,7 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 
 program
     : '\n'* (outer_stmt ('\n'|EOF))* EOF?
-      { console.log(JSON.stringify(ast.program($2), null, 2));
-        return ast.program($2); }
+      { return ast.program($2); }
     ;
 
 outer_stmt
@@ -77,8 +76,8 @@ outer_stmt
     ;
 
 class_block
-    : CLASS ID '\n' (class_stmt '\n')* END
-      -> ast.classBlock($4)
+    : CLASS var_name '\n' (class_stmt '\n')* END
+      -> ast.classBlock($2, $4)
     ;
 
 class_stmt
@@ -109,10 +108,15 @@ state_decl
 
 collection_type
     : TABLE
+      -> "'table'"
     | SCRATCH
+      -> "'scratch'"
     | INTERFACE
+      -> "'interface'"
     | LOOPBACK
+      -> "'loopback'"
     | PERIODIC
+      -> "'periodic'"
     ;
 
 field_list
@@ -121,7 +125,7 @@ field_list
     ;
 
 bloom_block
-    : BLOOM ID? DO '\n' (bloom_stmt '\n')* END
+    : BLOOM var_name? DO '\n' (bloom_stmt '\n')* END
       -> ast.bloomBlock($2, $5)
     ;
 
@@ -131,28 +135,36 @@ bloom_stmt
     ;
 
 bloom_op
-    : '<:'
+    : ':='
+      -> "':='"
     | '<~'
+      -> "':='"
     | '<+-'
+      -> "'<+-'"
     | '<+'
+      -> "'<+'"
     | '<-'
+      -> "'<-'"
     ;
 
 /* SIMPLE STATEMENT */
 
 simple_stmt
     : expression
+      -> ast.exprStmt($1)
     | assignment_stmt
     | bloom_stmt
     | puts_stmt
     ;
 
 assignment_stmt
-    : ID '=' expression
+    : var_name '=' expression
+      -> ast.assignmentStmt($1, $3)
     ;
 
 puts_stmt
     : PUTS expression_list
+      -> ast.putsStmt($2)
     ;
 
 /* EXPRESSION */
@@ -160,53 +172,65 @@ puts_stmt
 expression
     : or_test
     | or_test '?' expression ':' expression
+      -> ast.ternaryExpr($1, $3, $5)
     | or_test 'if' or_test 'else' expression
+      -> ast.ternaryExpr($3, $1, $5)
     ;
 
 or_test
     : and_test
     | or_test ('||'|'or') and_test
+      -> ast.binop($1, $2, $3)
     ;
 
 and_test
     : not_test
     | and_test ('&&'|'and') not_test
+      -> ast.binop($1, $2, $3)
     ;
 
 not_test
     : comparison
     | ('!'|'not') not_test
+      -> ast.unop($1, $2, $3)
     ;
 
 comparison
     : a_expr
     | a_expr ('<'|'>'|'=='|'<='|'>='|'!=') comparison
+      -> ast.binop($1, $2, $3)
     ;
 
 a_expr
     : m_expr
     | a_expr ('+'|'-') m_expr
+      -> ast.binop($1, $2, $3)
     ;
 
 m_expr
     : u_expr
     | m_expr ('*'|'/'|'%') u_expr
+      -> ast.binop($1, $2, $3)
     ;
 
 u_expr
     : power
     | ('-'|'+') u_expr
+      -> ast.unop($1, $2, $3)
     ;
 
 power
     : primary
     | primary '**' u_expr
+      -> ast.binop($1, $2, $3)
     ;
 
 primary
-    : ID
-    | STR_LIT
-    | NUM_LIT
+    : var_name
+    | STR_LITERAL
+      -> ast.strLiteral($1)
+    | NUM_LITERAL
+      -> ast.numLiteral($1)
     | parenth_form
     | arr_display
     | hash_display
@@ -214,6 +238,11 @@ primary
     | subscription
     | call
     | primary_block
+    ;
+
+var_name
+    : ID
+      -> ast.varName($1);
     ;
 
 parenth_form
@@ -242,7 +271,7 @@ kv_pair
     ;
 
 attribute_ref
-    : primary '.' ID
+    : primary '.' var_name
       -> ast.attributeRef($1, $3)
     ;
 
@@ -258,11 +287,13 @@ call
 
 primary_block
     : primary '{' '|' id_list '|' simple_stmt '}'
+      -> ast.primaryBlock($1, $4, [$6]);
     | primary DO '|' id_list '|' '\n' (simple_stmt '\n')* END
+      -> ast.primaryBlock($1, $4, $7);
     ;
 
 id_list
-    : (ID ',')* ID?
+    : (var_name ',')* var_name?
       -> $2 === undefined ? $1 : $1.concat([$2])
     ;
 
