@@ -286,10 +286,15 @@ call
     ;
 
 primary_block
-    : primary '{' '|' id_list '|' simple_stmt '}'
-      -> ast.primaryBlock($1, $4, [$6]);
-    | primary DO '|' id_list '|' '\n' (simple_stmt '\n')* END
-      -> ast.primaryBlock($1, $4, $7);
+    : primary func_expr
+      -> ast.primaryBlock($1, $2);
+    ;
+
+func_expr
+    : '{' '|' id_list '|' simple_stmt '}'
+      -> ast.funcExpr($3, [$5]);
+    | DO '|' id_list '|' '\n' (simple_stmt '\n')* END
+      -> ast.funcExpr($3, $6);
     ;
 
 id_list

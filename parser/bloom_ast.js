@@ -291,14 +291,24 @@ exports.call = function(func, args) {
   };
 };
 
-exports.primaryBlock = function(primary, args, statements) {
+exports.primaryBlock = function(primary, funcExpr) {
   return {
     type: 'primary_block',
     primary: primary,
+    funcExpr: funcExpr,
+    genCode: function() {
+      return this.primary.genCode() + '(' + this.funcExpr.genCode() + ')';
+    }
+  };
+};
+
+exports.funcExpr = function(args, statements) {
+  return {
+    type: 'func_expr',
     args: args,
     statements: statements,
     genCode: function() {
-      res = this.primary.genCode() + '(function(';
+      res = 'function(';
       this.args.forEach(function(arg) {
         res += arg.genCode() + ', ';
       });
@@ -312,7 +322,7 @@ exports.primaryBlock = function(primary, args, statements) {
         }
         res += this.statements[i].genCode();
       }
-      res += '})';
+      res += '}';
       return res;
     }
   };
