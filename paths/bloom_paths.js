@@ -1,5 +1,4 @@
 var Bloom = require('./Bloom');
-var cmpObj = require('./util').cmpObj;
 
 var Paths = function() {
   this._collections = {};
@@ -16,7 +15,7 @@ Paths.prototype.initializeState = function() {
 };
 
 Paths.prototype.initializeOps = function() {
-  this.op('<=', this._collections.paths,
+  this.op(':=', this._collections.paths,
           this._collections.links.select(function(link) {
     return {
       from: link.from,
@@ -26,14 +25,14 @@ Paths.prototype.initializeOps = function() {
     };
   }));
 
- this.op('<=', this._collections['links'],
+ this.op(':=', this._collections['links'],
     [{from: 'a', to: 'b', cost: 1},
       {from: 'a', to: 'b', cost: 4},
       {from: 'b', to: 'c', cost: 1},
       {from: 'c', to: 'd', cost: 1},
       {from: 'd', to: 'e', cost: 1}]);
 
-  this.op('<=', this._collections.paths, this._collections.links.join(
+  this.op(':=', this._collections.paths, this._collections.links.join(
     this._collections.paths,
     function(link) { return link.to; },
     function(path) { return path.from; },
@@ -54,7 +53,7 @@ p.tick();
 
 console.log('-----');
 
-p.op('<=', p._collections.links, [{from: 'e', to: 'f', cost: 1}]);
+p.op(':=', p._collections.links, [{from: 'e', to: 'f', cost: 1}]);
 
 p.tick();
 

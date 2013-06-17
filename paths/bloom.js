@@ -51,7 +51,7 @@ prototype.tick = function() {
       this._collections[name]._newData = this._collections[name]._data;
     }
     this._ops.forEach(function(op) {
-      if (op.type === '<=') {
+      if (op.type === ':=') {
         op.lhs._newData = Ix.Enumerable.fromArray(
           op.rhs.getData().union(op.lhs._newData, cmpObj).toArray()
         );
@@ -79,7 +79,7 @@ prototype.tick = function() {
   var self = this;
   do {
     this._ops.forEach(function(op) {
-      if (op.type === '<=') {
+      if (op.type === ':=') {
         op.lhs._newData = Ix.Enumerable.fromArray(
           op.rhs.getDelta().union(op.lhs._newData, cmpObj).toArray()
         );

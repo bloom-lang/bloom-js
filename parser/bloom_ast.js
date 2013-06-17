@@ -37,9 +37,10 @@ exports.classBlock = function(name, statements) {
 exports.stateBlock = function(stateDecls) {
   return {
     type: 'state_block',
+    className: '',
     stateDecls: stateDecls,
     genCode: function() {
-      var res = 'Paths.prototype.initializeState = function() {\n';
+      var res = this.className + '.prototype.initializeState = function() {\n';
       this.stateDecls.forEach(function(stateDecl) {
         res += stateDecl.genCode();
       });
@@ -52,10 +53,11 @@ exports.stateBlock = function(stateDecls) {
 exports.bloomBlock = function(name, statements) {
   return {
     type: 'bloom_block',
+    className: '',
     name: name === undefined ? '' : name,
     statements: statements,
     genCode: function() {
-      var res = 'Paths.prototype.initializeOps = function() {\n';
+      var res = this.className + '.prototype.initializeOps = function() {\n';
       this.statements.forEach(function(statement) {
         res += statement.genCode();
       });
@@ -97,13 +99,14 @@ exports.stateDecl = function(type, name, keys, vals) {
 exports.bloomStmt = function(destCollection, bloomOp, srcCollection) {
   return {
     type: 'bloom_stmt',
+    className: 'this',
     bloomOp: bloomOp,
     destCollection: destCollection,
     srcCollection: srcCollection,
     genCode: function() {
-      // TODO: fix this
-      return 'this.op(' + this.bloomOp + ',' + this.destCollection.genCode() +
-        ',' + this.srcCollection.genCode() + ');\n';
+      return this.className + '.op(' + this.bloomOp + ',' +
+        this.destCollection.genCode() + ',' + this.srcCollection.genCode() +
+        ');\n';
     }
   };
 };
@@ -279,6 +282,25 @@ exports.call = function(func, args) {
     args: args,
     genCode: function() {
       var res = this.func.genCode() + '(';
+      this.args.forEach(function(arg) {
+        res += arg.genCode() + ', ';
+      });
+      if (this.args.length > 0) {
+        res = res.slice(0, -2);
+      }
+      res += ')';
+      return res;
+    }
+  };
+};
+
+exports.newExpr = function(name, args) {
+  return {
+    type: 'new_expr',
+    name: name,
+    args: args,
+    genCode: function() {
+      res = 'new ' + this.name.genCode() + '(';
       this.args.forEach(function(arg) {
         res += arg.genCode() + ', ';
       });

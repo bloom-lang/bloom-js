@@ -23,6 +23,7 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 'do'                      return 'DO'
 'end'                     return 'END'
 'puts'                    return 'PUTS'
+'new'                     return 'NEW'
 {id}                      return 'ID'
 {string}                  return 'STR_LITERAL'
 {number}                  return 'NUM_LITERAL'
@@ -237,6 +238,7 @@ primary
     | attribute_ref
     | subscription
     | call
+    | new_expr
     | primary_block
     ;
 
@@ -266,7 +268,7 @@ hash_display
     ;
 
 kv_pair
-    : primary '=>' primary
+    : primary ':' expression
       -> [$1, $3]
     ;
 
@@ -283,6 +285,11 @@ subscription
 call
     : primary '(' expression_list ')'
       -> ast.call($1, $3)
+    ;
+
+new_expr
+    : NEW var_name '(' expression_list ')'
+      -> ast.newExpr($2, $4)
     ;
 
 primary_block

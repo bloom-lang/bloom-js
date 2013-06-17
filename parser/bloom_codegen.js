@@ -13,9 +13,9 @@ var genJSONStringify = function(node) {
   );
 };
 
-var genCollectionRef = function(name) {
+var genCollectionRef = function(className, name) {
   return ast.attributeRef(
-    ast.varName('this'),
+    ast.varName(className),
     ast.attributeRef(
       ast.varName('_collections'),
       ast.varName(name)
@@ -27,7 +27,7 @@ var rewriteSrcCollection = function(bloomStmt) {
   var primary = bloomStmt.srcCollection.primary;
   if (primary.type === 'var_name') {
     bloomStmt.srcCollection.primary = ast.attributeRef(
-      genCollectionRef(primary.name),
+      genCollectionRef(bloomStmt.className, primary.name),
       ast.varName('select')
     );
   } else if (primary.type === 'call') {
@@ -45,28 +45,28 @@ var rewriteSrcCollection = function(bloomStmt) {
           ast.varName(kvPair[1].value)
         ));
       });
-      var leftJoinAst, rightJoinAst;
+      var leftJoinExpr, rightJoinExpr;
       if (leftJoinKeys.length > 1 || rightJoinKeys.length > 1) {
-        leftJoinAst = genJSONStringify(ast.arrDisplay(leftJoinKeys));
-        rightJoinAst = genJSONStringify(ast.arrDisplay(rightJoinKeys));
+        leftJoinExpr = genJSONStringify(ast.arrDisplay(leftJoinKeys));
+        rightJoinExpr = genJSONStringify(ast.arrDisplay(rightJoinKeys));
       } else {
-        leftJoinAst = leftJoinKeys[0];
-        rightJoinAst = rightJoinKeys[0];
+        leftJoinExpr = leftJoinKeys[0];
+        rightJoinExpr = rightJoinKeys[0];
       }
       bloomStmt.srcCollection = ast.call(
         ast.attributeRef(
-          genCollectionRef(primary.func.obj.left.name),
+          genCollectionRef(bloomStmt.className, primary.func.obj.left.name),
           ast.varName('join')
         ),
         [
-          genCollectionRef(primary.func.obj.right.name),
+          genCollectionRef(bloomStmt.className, primary.func.obj.right.name),
           ast.funcExpr(
             [ast.varName('x')],
-            [leftJoinAst]
+            [ast.exprStmt(leftJoinExpr)]
           ),
           ast.funcExpr(
             [ast.varName('y')],
-            [rightJoinAst]
+            [ast.exprStmt(rightJoinExpr)]
           ),
           bloomStmt.srcCollection.funcExpr
         ]
@@ -81,25 +81,35 @@ var rewriteAst = function(node) {
       rewriteAst(statement);
     });
   } else if (node.type === 'class_block') {
-    var tableNames = [];
+    //var tableNames = [];
     node.statements.forEach(function(statement) {
       if (statement.type === 'state_block') {
+        statement.className = node.name.name;
+          /*
         statement.stateDecls.forEach(function(stateDecl) {
           tableNames.push(stateDecl.name.value.slice(1, -1));
-        });
+        });*/
       }
     });
     node.statements.forEach(function(statement) {
       if (statement.type === 'bloom_block') {
+        statement.className = node.name.name;
         statement.statements.forEach(function(bloomStmt) {
           bloomStmt.destCollection =
-            genCollectionRef(bloomStmt.destCollection.name);
+            genCollectionRef('this', bloomStmt.destCollection.name);
           if (bloomStmt.srcCollection.type === 'primary_block') {
             rewriteSrcCollection(bloomStmt);
           }
         });
       }
     });
+  } else if (node.type === 'bloom_stmt') {
+    node.className = node.destCollection.obj.name;
+    node.destCollection =
+      genCollectionRef(node.className, node.destCollection.attribute.name);
+    if (node.srcCollection.type === 'primary_block') {
+      rewriteSrcCollection(node);
+    }
   }
 };
 
