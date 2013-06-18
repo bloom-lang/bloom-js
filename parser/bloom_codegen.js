@@ -3,7 +3,6 @@ var parser = require('./bloom_parser');
 var ast = require('./bloom_ast');
 
 var genJSONStringify = function(node) {
-  console.log(node);
   return ast.call(
     ast.attributeRef(
       ast.varName('JSON'),
@@ -23,43 +22,105 @@ var genCollectionRef = function(className, name) {
   );
 };
 
-var rewriteSrcCollection = function(bloomStmt) {
-  var primary = bloomStmt.srcCollection.primary;
-  if (primary.type === 'var_name') {
-    bloomStmt.srcCollection.primary = ast.attributeRef(
-      genCollectionRef(bloomStmt.className, primary.name),
-      ast.varName('select')
-    );
-  } else if (primary.type === 'call') {
-    var funcName = primary.func.attribute.name;
-    if (funcName === 'pairs') {
-      var leftJoinKeys = [];
-      var rightJoinKeys = [];
-      primary.args[0].kvPairs.forEach(function(kvPair) {
-        leftJoinKeys.push(ast.subscription(
-          ast.varName('x'),
-          ast.varName(kvPair[0].value)
-        ));
-        rightJoinKeys.push(ast.subscription(
-          ast.varName('y'),
-          ast.varName(kvPair[1].value)
-        ));
-      });
-      var leftJoinExpr, rightJoinExpr;
-      if (leftJoinKeys.length > 1 || rightJoinKeys.length > 1) {
-        leftJoinExpr = genJSONStringify(ast.arrDisplay(leftJoinKeys));
-        rightJoinExpr = genJSONStringify(ast.arrDisplay(rightJoinKeys));
-      } else {
-        leftJoinExpr = leftJoinKeys[0];
-        rightJoinExpr = rightJoinKeys[0];
+var getCollectionName = function(node) {
+  if (node.type === 'var_name') {
+    return node.name;
+  } else if (node.type === 'attribute_ref') {
+    return node.attribute.name;
+  }
+  return null;
+};
+
+var genIndexedColumnRefs = function(node, stateSpecs) {
+  var i, k, attrIndex;
+  if (node.type === 'attribute_ref' && node.obj.type === 'var_name' &&
+      node.attribute.type === 'var_name' &&
+      stateSpecs.hasOwnProperty(node.obj.name)) {
+    attrIndex = stateSpecs[node.obj.name].indexOf(node.attribute.name);
+    if (attrIndex !== -1) {
+      return ast.subscription(
+        ast.varName(node.obj.name),
+        ast.numLiteral(''+attrIndex)
+      );
+    }
+  }
+  for (k in node) {
+    if (node[k].type !== undefined) {
+      node[k] = genIndexedColumnRefs(node[k], stateSpecs);
+    } else if (Object.prototype.toString.call(node[k]) === '[object Array]') {
+      for (i = 0; i < node[k].length; i++) {
+        node[k][i] = genIndexedColumnRefs(node[k][i], stateSpecs);
       }
-      bloomStmt.srcCollection = ast.call(
-        ast.attributeRef(
-          genCollectionRef(bloomStmt.className, primary.func.obj.left.name),
-          ast.varName('join')
+    }
+  }
+  return node;
+};
+
+var rewriteFuncExpr = function(collectionNames, funcExpr, stateSpecs) {
+  var i, newStateSpecs = {};
+  for (i = 0; i < funcExpr.args.length; i++) {
+    newStateSpecs[funcExpr.args[i].name] = stateSpecs[collectionNames[i]];
+  }
+  for (i = 0; i < funcExpr.statements.length; i++) {
+    funcExpr.statements[i] = genIndexedColumnRefs(funcExpr.statements[i],
+                                                  newStateSpecs);
+  }
+};
+
+var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
+  bloomStmt.destCollection =
+    genCollectionRef(bloomStmt.opPrefix,
+                     getCollectionName(bloomStmt.destCollection));
+  if (bloomStmt.srcCollection.type === 'var_name') {
+    bloomStmt.srcCollection = genCollectionRef(bloomStmt.opPrefix,
+                                               bloomStmt.srcCollection.name);
+  } else if (bloomStmt.srcCollection.type === 'primary_block') {
+    var primary = bloomStmt.srcCollection.primary;
+    if (primary.type === 'var_name') {
+      bloomStmt.srcCollection.primary = ast.attributeRef(
+        genCollectionRef(bloomStmt.opPrefix, primary.name),
+        ast.varName('select')
+      );
+      rewriteFuncExpr([primary.name], bloomStmt.srcCollection.funcExpr,
+                      stateSpecs);
+    } else if (primary.type === 'call') {
+      var funcName = primary.func.attribute.name;
+      if (funcName === 'pairs') {
+        var leftJoinKeys = [];
+        var rightJoinKeys = [];
+        var leftCollectionName = getCollectionName(primary.func.obj.left);
+        var rightCollectionName = getCollectionName(primary.func.obj.right);
+        rewriteFuncExpr([leftCollectionName, rightCollectionName],
+                        bloomStmt.srcCollection.funcExpr, stateSpecs);
+        primary.args[0].kvPairs.forEach(function(kvPair) {
+          var leftAttrIndex = stateSpecs[leftCollectionName].
+            indexOf(kvPair[0].value.slice(1, -1));
+          var rightAttrIndex = stateSpecs[rightCollectionName].
+            indexOf(kvPair[1].value.slice(1, -1));
+          leftJoinKeys.push(ast.subscription(
+            ast.varName('x'),
+            ast.numLiteral(''+leftAttrIndex)
+          ));
+          rightJoinKeys.push(ast.subscription(
+            ast.varName('y'),
+            ast.numLiteral(''+rightAttrIndex)
+          ));
+        });
+        var leftJoinExpr, rightJoinExpr;
+        if (leftJoinKeys.length > 1 || rightJoinKeys.length > 1) {
+          leftJoinExpr = genJSONStringify(ast.arrDisplay(leftJoinKeys));
+          rightJoinExpr = genJSONStringify(ast.arrDisplay(rightJoinKeys));
+        } else {
+          leftJoinExpr = leftJoinKeys[0];
+          rightJoinExpr = rightJoinKeys[0];
+        }
+        bloomStmt.srcCollection = ast.call(
+          ast.attributeRef(
+            genCollectionRef(bloomStmt.opPrefix,leftCollectionName),
+            ast.varName('join')
         ),
         [
-          genCollectionRef(bloomStmt.className, primary.func.obj.right.name),
+          genCollectionRef(bloomStmt.opPrefix, rightCollectionName),
           ast.funcExpr(
             [ast.varName('x')],
             [ast.exprStmt(leftJoinExpr)]
@@ -70,47 +131,75 @@ var rewriteSrcCollection = function(bloomStmt) {
           ),
           bloomStmt.srcCollection.funcExpr
         ]
-      );
+        );
+      }
     }
   }
 };
 
-var rewriteAst = function(node) {
-  if (node.type === 'program') {
-    node.statements.forEach(function(statement) {
-      rewriteAst(statement);
-    });
-  } else if (node.type === 'class_block') {
-    //var tableNames = [];
-    node.statements.forEach(function(statement) {
-      if (statement.type === 'state_block') {
-        statement.className = node.name.name;
-          /*
-        statement.stateDecls.forEach(function(stateDecl) {
-          tableNames.push(stateDecl.name.value.slice(1, -1));
-        });*/
-      }
-    });
-    node.statements.forEach(function(statement) {
-      if (statement.type === 'bloom_block') {
-        statement.className = node.name.name;
-        statement.statements.forEach(function(bloomStmt) {
-          bloomStmt.destCollection =
-            genCollectionRef('this', bloomStmt.destCollection.name);
-          if (bloomStmt.srcCollection.type === 'primary_block') {
-            rewriteSrcCollection(bloomStmt);
-          }
-        });
-      }
-    });
-  } else if (node.type === 'bloom_stmt') {
-    node.className = node.destCollection.obj.name;
-    node.destCollection =
-      genCollectionRef(node.className, node.destCollection.attribute.name);
-    if (node.srcCollection.type === 'primary_block') {
-      rewriteSrcCollection(node);
+var rewriteClassBlock = function(classBlock, stateSpecs) {
+  classBlock.statements.forEach(function(classStmt) {
+    if (classStmt.type === 'state_block') {
+      classStmt.className = classBlock.name;
+    } else if (classStmt.type === 'bloom_block') {
+      classStmt.className = classBlock.name;
+      classStmt.statements.forEach(function(bloomStmt) {
+        rewriteBloomStmt(bloomStmt, stateSpecs[classStmt.className]);
+      });
     }
-  }
+  });
+};
+
+var getStateSpecs = function(program) {
+  var tableName, tableCols, tableSpecs, classSpecs = {};
+  program.statements.forEach(function(programStmt) {
+    if (programStmt.type === 'class_block') {
+      tableSpecs = {};
+      programStmt.statements.forEach(function(classStmt) {
+        if (classStmt.type === 'state_block') {
+          classStmt.stateDecls.forEach(function(stateDecl) {
+            tableName = stateDecl.name.value.slice(1, -1);
+            tableCols = [];
+            stateDecl.keys.forEach(function(key) {
+              tableCols.push(key.value.slice(1, -1));
+            });
+            stateDecl.vals.forEach(function(val) {
+              tableCols.push(val.value.slice(1, -1));
+            });
+            tableSpecs[tableName] = tableCols;
+          });
+        }
+      });
+      classSpecs[programStmt.name] = tableSpecs;
+    }
+  });
+  return classSpecs;
+};
+
+var getObjClasses = function(program) {
+  var objClasses = {};
+  program.statements.forEach(function(programStmt) {
+    if (programStmt.type === 'assignment_stmt') {
+      if (programStmt.value.type === 'new_expr') {
+        objClasses[programStmt.target.name] = programStmt.value.name;
+      }
+    }
+  });
+  return objClasses;
+};
+
+var rewriteProgram = function(program) {
+  var objClasses = getObjClasses(program),
+      stateSpecs = getStateSpecs(program);
+  program.statements.forEach(function(programStmt) {
+    if (programStmt.type === 'class_block') {
+      rewriteClassBlock(programStmt, stateSpecs);
+    } else if (programStmt.type === 'bloom_stmt') {
+      programStmt.opPrefix = programStmt.destCollection.obj.name;
+      rewriteBloomStmt(programStmt,
+                       stateSpecs[objClasses[programStmt.opPrefix]]);
+    }
+  });
 };
 
 var inpFile = process.argv[2];
@@ -124,7 +213,7 @@ if (inpFile !== undefined) {
 
 var bloomAst = parser.parse(bloomStr);
 
-rewriteAst(bloomAst);
+rewriteProgram(bloomAst);
 
 var jsCode = bloomAst.genCode();
 

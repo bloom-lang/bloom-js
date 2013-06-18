@@ -77,7 +77,7 @@ outer_stmt
     ;
 
 class_block
-    : CLASS var_name '\n' (class_stmt '\n')* END
+    : CLASS ID '\n' (class_stmt '\n')* END
       -> ast.classBlock($2, $4)
     ;
 
@@ -288,7 +288,7 @@ call
     ;
 
 new_expr
-    : NEW var_name '(' expression_list ')'
+    : NEW ID '(' expression_list ')'
       -> ast.newExpr($2, $4)
     ;
 

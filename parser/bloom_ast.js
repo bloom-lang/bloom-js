@@ -19,13 +19,13 @@ exports.classBlock = function(name, statements) {
     statements: statements,
     genCode: function() {
       var res =
-        'var ' + this.name.genCode() + ' = function() {\n' +
+        'var ' + this.name + ' = function() {\n' +
           'this._collections = {};\n' +
           'this._ops = [];\n' +
           'this.initializeState();\n' +
           'this.initializeOps();\n' +
         '};\n' +
-        this.name.genCode() + '.prototype = new Bloom();\n';
+        this.name + '.prototype = new Bloom();\n';
       this.statements.forEach(function(statement) {
         res += statement.genCode();
       });
@@ -99,12 +99,12 @@ exports.stateDecl = function(type, name, keys, vals) {
 exports.bloomStmt = function(destCollection, bloomOp, srcCollection) {
   return {
     type: 'bloom_stmt',
-    className: 'this',
+    opPrefix: 'this',
     bloomOp: bloomOp,
     destCollection: destCollection,
     srcCollection: srcCollection,
     genCode: function() {
-      return this.className + '.op(' + this.bloomOp + ',' +
+      return this.opPrefix + '.op(' + this.bloomOp + ',' +
         this.destCollection.genCode() + ',' + this.srcCollection.genCode() +
         ');\n';
     }
@@ -300,7 +300,7 @@ exports.newExpr = function(name, args) {
     name: name,
     args: args,
     genCode: function() {
-      res = 'new ' + this.name.genCode() + '(';
+      res = 'new ' + this.name + '(';
       this.args.forEach(function(arg) {
         res += arg.genCode() + ', ';
       });
