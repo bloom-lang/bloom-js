@@ -3,6 +3,7 @@ class ShortestPaths
   state do
     table 'link', ['from', 'to', 'cost']
     scratch 'path', ['from', 'to', 'nxt', 'cost']
+    scratch 'shortest', ['from', 'to'] => ['nxt', 'cost']
   end
 
   # recursive rules to define all paths from links
@@ -12,6 +13,11 @@ class ShortestPaths
 
     # inductive case: make path of length n+1 by connecting a link to a path of
     # length n
+    path := (link*path).pairs({'to': 'from'}) do |l,p|
+      [l.from, p.to, l.to, l.cost+p.cost]
+    end
+
+    shortest := path.argmin([path.from, path.to], path.cost)
   end
 end
 
@@ -26,9 +32,6 @@ program.link := [['a', 'b', 1], \
                  ['c', 'd', 1], \
                  ['d', 'e', 1]]
 
-program.path := (program.link*program.path).pairs({'to': 'from'}) do |l,p|
-  [l.from, p.to, l.to, l.cost+p.cost]
-end
 
 program.tick() # one timestamp is enough for this simple program
 

@@ -14,6 +14,10 @@ prototype.addCollection = function(name, type, keys, vals) {
     vals = type === 'channel' ? [] : ['val'];
   }
   this._collections[name] = new BloomCollection(name, type);
+  this._collectionNodes[name] = {
+    children: {},
+    parents: {}
+  };
   return this._collections[name];
 };
 
@@ -31,23 +35,150 @@ prototype.addCollectionFromArray = function(arr) {
   return this._collections[name];
 };
 
-prototype.op = function(type, lhs, rhs) {
-  if (rhs instanceof Array) {
+prototype.op = function(type, lhs, rhs, spec) {
+  var targetNode, self = this;
+  if (Object.prototype.toString.call(rhs) === '[object Array]') {
     rhs = this.addCollectionFromArray(rhs);
   }
   this._ops.push({
     type: type,
     lhs: lhs,
-    rhs: rhs
+    rhs: rhs,
+    target: spec.target
   });
+  if (type === ':=') {
+    targetNode = this._collectionNodes[spec.target]
+    spec.monotomicDeps.forEach(function(parentName) {
+      if (targetNode.parents[parentName] !== 'non-monotomic') {
+        targetNode.parents[parentName] = 'monotomic';
+        self._collectionNodes[parentName].children[spec.target] = 'monotomic';
+      }
+    });
+    spec.nonMonotomicDeps.forEach(function(parentName) {
+      targetNode.parents[parentName] = 'non-monotomic';
+      self._collectionNodes[parentName].children[spec.target] = 'non-monotomic';
+    });
+    this._opsStratified = false;
+  }
+};
+
+prototype.stratifyOps = function() {
+  var name, node, parentName, childName, childNode, toVisit = [],
+    postOrder = [], ccToVisit = [], ccCounter = -1, comp, num, childNum,
+    childComp, topoToVisit = [];
+  for (name in this._collectionNodes) {
+    if (this._collectionNodes.hasOwnProperty(name)) {
+      this._collectionNodes[name].visited = false;
+      this._collectionNodes[name].visitedTwice = false;
+      this._collectionNodes[name].ccNum = -1;
+      toVisit.push(name);
+    }
+  }
+  // Run a DFS on the reverse of our dependency graph (following parent pointers
+  // rather than children), so by the end of the traversal the end of the
+  // postOrder array will be a sink in our original graph
+  while (toVisit.length > 0) {
+    name = toVisit.pop();
+    node = this._collectionNodes[name];
+    if (!node.visited) {
+      node.visited = true;
+      toVisit.push(name);
+      for (parentName in node.parents) {
+        if (node.parents.hasOwnProperty(parentName)) {
+          if (!this._collectionNodes[parentName].visited) {
+            toVisit.push(parentName);
+          }
+        }
+      }
+    } else if (!node.visitedTwice) {
+      node.visitedTwice = true;
+      postOrder.push(name);
+    }
+  }
+  // Find the connected components of our graph by running a DFS from each node,
+  // starting from the end of our postOrder array (processing sinks first)
+  while (postOrder.length > 0) {
+    name = postOrder.pop();
+    if (this._collectionNodes[name].ccNum === -1) {
+      ccCounter++;
+      this._connectedComponents[ccCounter] = {
+        stratum: -1,
+        members: [],
+        children: {},
+        numParents: 0
+      };
+      comp = this._connectedComponents[ccCounter];
+      ccToVisit.push(name);
+    }
+    while (ccToVisit.length > 0) {
+      name = ccToVisit.pop();
+      node = this._collectionNodes[name];
+      if (node.ccNum === -1) {
+        node.ccNum = ccCounter;
+        comp.members.push(name);
+        for (childName in node.children) {
+          if (node.children.hasOwnProperty(childName)) {
+            childNode = this._collectionNodes[childName];
+            if (childNode.ccNum === -1 || childNode.ccNum === ccCounter) {
+              if (node.children[childName] === 'non-monotomic') {
+                console.error('Error: Non-monotomic loop detected in ' +
+                              'collection dependency graph, caused by the ' +
+                              'non-monotomic op from %s into %s',
+                              name, childName);
+              }
+              if (childNode.ccNum === -1) {
+                ccToVisit.push(childName);
+              }
+            } else {
+              if (comp.children[childNode.ccNum] !== 'non-monotomic') {
+                if (comp.children[childNode.ccNum] === undefined) {
+                  this._connectedComponents[childNode.ccNum].numParents++;
+                }
+                comp.children[childNode.ccNum] = node.children[childName];
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  // Topologically sort the connected components into layers separated by
+  // non-monotomic operations
+  for (num in this._connectedComponents) {
+    if (this._connectedComponents.hasOwnProperty(num) &&
+        this._connectedComponents[num].numParents === 0) {
+      this._connectedComponents[num].stratum = 0;
+      topoToVisit.push(num);
+    }
+  }
+  while (topoToVisit.length > 0) {
+    num = topoToVisit.pop();
+    comp = this._connectedComponents[num];
+    for (childNum in comp.children) {
+      if (comp.children.hasOwnProperty(childNum)) {
+        childComp = this._connectedComponents[childNum];
+        if (comp.children[childNum] === 'monotomic') {
+          childComp.stratum = Math.max(childComp.stratum, comp.stratum);
+        } else if (comp.children[childNum] === 'non-monotomic') {
+          childComp.stratum = Math.max(childComp.stratum, comp.stratum + 1);
+        }
+        childComp.numParents--;
+        if (childComp.numParents === 0) {
+          topoToVisit.push(childNum);
+        }
+      }
+    }
+  }
+  console.log(this._connectedComponents);
+  this._opsStratified = true;
 };
 
 /*
 // Naive Evaluation
 prototype.tick = function() {
-  var self = this;
+  var name, allSame, self = this;
   do {
-    for (var name in this._collections) {
+    for (name in this._collections) {
       this._collections[name]._newData = this._collections[name]._data;
     }
     this._ops.forEach(function(op) {
@@ -57,26 +188,29 @@ prototype.tick = function() {
         );
       }
     });
-    var allSame = true;
-    for (var name in this._collections) {
+    allSame = true;
+    for (name in this._collections) {
       if (this._collections[name]._newData.count() !==
           this._collections[name]._data.count()) {
         allSame = false;
       }
     }
-    for (var name in this._collections) {
+    for (name in this._collections) {
       this._collections[name]._data = this._collections[name]._newData;
     }
   } while (!allSame);
 
-  for (var name in this._collections) {
+  for (name in this._collections) {
     console.log(name, this._collections[name]._data.toArray());
   }
 };*/
 
 // Seminaive Evaluation
 prototype.tick = function() {
-  var self = this;
+  var allEmpty, name, collection, self = this;
+  if (!this._opsStratified) {
+    this.stratifyOps();
+  }
   do {
     this._ops.forEach(function(op) {
       if (op.type === ':=') {
@@ -85,23 +219,27 @@ prototype.tick = function() {
         );
       }
     });
-    var allEmpty = true;
-    for (var name in this._collections) {
-      var collection = this._collections[name];
-      collection._data = Ix.Enumerable.fromArray(
-        collection._data.concat(collection._delta).toArray()
-      );
-      collection._delta = Ix.Enumerable.fromArray(
-        collection._newData.except(collection._data, cmpObj).toArray()
-      );
-      if (collection._delta.count() !== 0) {
-        allEmpty = false;
+    allEmpty = true;
+    for (name in this._collections) {
+      if (this._collections.hasOwnProperty(name)) {
+        collection = this._collections[name];
+        collection._data = Ix.Enumerable.fromArray(
+          collection._data.concat(collection._delta).toArray()
+        );
+        collection._delta = Ix.Enumerable.fromArray(
+          collection._newData.except(collection._data, cmpObj).toArray()
+        );
+        if (collection._delta.count() !== 0) {
+          allEmpty = false;
+        }
       }
     }
   } while (!allEmpty);
 
-  for (var name in this._collections) {
-    console.log(name, this._collections[name]._data.toArray());
+  for (name in this._collections) {
+    if (this._collections.hasOwnProperty(name)) {
+      console.log(name, this._collections[name]._data.toArray());
+    }
   }
 };
 

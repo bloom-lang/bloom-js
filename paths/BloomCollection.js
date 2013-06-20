@@ -69,4 +69,13 @@ prototype.join = function(innerCollection, outerFn, innerFn, joinFn) {
   });
 };
 
+prototype.groupBy = function(keyFn, aggFn) {
+  var self = this;
+  return genTempCollection(function() {
+    return self.getData().groupBy(keyFn, aggFn);
+  }, function() {
+    return self.getDelta().groupBy(keyFn, aggFn);
+  });
+};
+
 module.exports = BloomCollection;
