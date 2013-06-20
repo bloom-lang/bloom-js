@@ -44,7 +44,9 @@ prototype.op = function(type, lhs, rhs, spec) {
     type: type,
     lhs: lhs,
     rhs: rhs,
-    target: spec.target
+    target: spec.target,
+    fullyNonMonotomic: spec.monotomicDeps.length === 0 &&
+      spec.nonMonotomicDeps.length > 0
   });
   if (type === ':=') {
     targetNode = this._collectionNodes[spec.target]
@@ -58,14 +60,14 @@ prototype.op = function(type, lhs, rhs, spec) {
       targetNode.parents[parentName] = 'non-monotomic';
       self._collectionNodes[parentName].children[spec.target] = 'non-monotomic';
     });
-    this._opsStratified = false;
+    this._opStrata = null;
   }
 };
 
 prototype.stratifyOps = function() {
   var name, node, parentName, childName, childNode, toVisit = [],
     postOrder = [], ccToVisit = [], ccCounter = -1, comp, num, childNum,
-    childComp, topoToVisit = [];
+    childComp, topoToVisit = [], ccStratum, opStratum, self = this;
   for (name in this._collectionNodes) {
     if (this._collectionNodes.hasOwnProperty(name)) {
       this._collectionNodes[name].visited = false;
@@ -169,8 +171,17 @@ prototype.stratifyOps = function() {
       }
     }
   }
-  console.log(this._connectedComponents);
-  this._opsStratified = true;
+  this._opStrata = [];
+  this._ops.forEach(function(op) {
+    num = self._collectionNodes[op.target].ccNum;
+    ccStratum = self._connectedComponents[num].stratum;
+    opStratum = op.fullyNonMonotomic ? 2 * ccStratum - 1: 2 * ccStratum;
+    if (self._opStrata[opStratum] === undefined) {
+      self._opStrata[opStratum] = [];
+    }
+    self._opStrata[opStratum].push(op);
+  });
+  console.log(this._opStrata);
 };
 
 /*
@@ -208,7 +219,7 @@ prototype.tick = function() {
 // Seminaive Evaluation
 prototype.tick = function() {
   var allEmpty, name, collection, self = this;
-  if (!this._opsStratified) {
+  if (this._opStrata === null) {
     this.stratifyOps();
   }
   do {

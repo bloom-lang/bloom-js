@@ -5,6 +5,7 @@ var Paths = function() {
   this._collectionNodes = {};
   this._connectedComponents = {};
   this._ops = [];
+  this._opStrata = null;
   this.initializeState();
   this.initializeOps();
 };
