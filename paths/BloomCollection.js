@@ -7,11 +7,13 @@ var BloomCollection = function(name, type, initArr) {
   if (name !== undefined) {
     this._name = name;
     this._type = type;
-    this._data = Ix.Enumerable.empty();
-    this._newData = Ix.Enumerable.empty();
-    this._delta = initArr === undefined ?
+    this._oldData = Ix.Enumerable.empty();
+    this._data = initArr === undefined ?
       Ix.Enumerable.empty() :
       Ix.Enumerable.fromArray(initArr);
+    this._newData = Ix.Enumerable.empty();
+    this._delta = Ix.Enumerable.empty();
+    this._stratumDelta = Ix.Enumerable.empty();
   }
 }
 
@@ -69,13 +71,11 @@ prototype.join = function(innerCollection, outerFn, innerFn, joinFn) {
   });
 };
 
-prototype.groupBy = function(keyFn, aggFn) {
+prototype.groupBy = function(keyFn, elFn, resFn) {
   var self = this;
   return genTempCollection(function() {
-    return self.getData().groupBy(keyFn, aggFn);
-  }, function() {
-    return self.getDelta().groupBy(keyFn, aggFn);
-  });
+    return self.getData().groupBy(keyFn, elFn, resFn);
+  }, null);
 };
 
 module.exports = BloomCollection;

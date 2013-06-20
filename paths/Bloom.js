@@ -21,18 +21,10 @@ prototype.addCollection = function(name, type, keys, vals) {
   return this._collections[name];
 };
 
-prototype.genCollectionName = function() {
-  var count = 0;
-  while ('anon' + count in this._collections) {
-    count++;
-  }
-  return 'anon' + count;
-};
-
 prototype.addCollectionFromArray = function(arr) {
-  var name = this.genCollectionName();
-  this._collections[name] = new BloomCollection(name, 'init', arr);
-  return this._collections[name];
+  var name = 'anon' + Object.keys(this._anonCollections).length;
+  this._anonCollections[name] = new BloomCollection('', 'anon', arr);
+  return this._anonCollections[name];
 };
 
 prototype.op = function(type, lhs, rhs, spec) {
@@ -177,11 +169,16 @@ prototype.stratifyOps = function() {
     ccStratum = self._connectedComponents[num].stratum;
     opStratum = op.fullyNonMonotomic ? 2 * ccStratum - 1: 2 * ccStratum;
     if (self._opStrata[opStratum] === undefined) {
-      self._opStrata[opStratum] = [];
+      self._opStrata[opStratum] = {
+        targets: {},
+        ops: []
+      };
     }
-    self._opStrata[opStratum].push(op);
+    self._connectedComponents[num].members.forEach(function(collectionName) {
+      self._opStrata[opStratum].targets[collectionName] = true;
+    });
+    self._opStrata[opStratum].ops.push(op);
   });
-  console.log(this._opStrata);
 };
 
 /*
@@ -218,38 +215,129 @@ prototype.tick = function() {
 
 // Seminaive Evaluation
 prototype.tick = function() {
-  var allEmpty, name, collection, self = this;
+  var i, name, collection, allEmpty, firstIter, prevCollections = [],
+    self = this;
   if (this._opStrata === null) {
     this.stratifyOps();
   }
-  do {
-    this._ops.forEach(function(op) {
-      if (op.type === ':=') {
-        op.lhs._newData = Ix.Enumerable.fromArray(
-          op.rhs.getDelta().union(op.lhs._newData, cmpObj).toArray()
-        );
-      }
-    });
-    allEmpty = true;
-    for (name in this._collections) {
-      if (this._collections.hasOwnProperty(name)) {
-        collection = this._collections[name];
-        collection._data = Ix.Enumerable.fromArray(
-          collection._data.concat(collection._delta).toArray()
-        );
-        collection._delta = Ix.Enumerable.fromArray(
-          collection._newData.except(collection._data, cmpObj).toArray()
-        );
-        if (collection._delta.count() !== 0) {
-          allEmpty = false;
+  for (name in this._collections) {
+    if (this._collections.hasOwnProperty(name)) {
+      this._collections[name]._oldData = Ix.Enumerable.fromArray(
+        this._collections[name]._data.toArray()
+      );
+      this._collections[name]._stratumDelta = Ix.Enumerable.empty();
+    }
+  }
+  for (i = 0; i < this._opStrata.length; i++) {
+    if (this._opStrata[i] !== undefined) {
+      // If i is odd, all operations are purely non-monotomic, so there is no
+      // need to run a loop and we operate on previous data rather than deltas
+      if (i % 2 === 1) {
+        this._opStrata[i].ops.forEach(function(op) {
+          op.lhs._newData = Ix.Enumerable.fromArray(
+            op.rhs.getData().union(op.lhs._newData, cmpObj).toArray()
+          );
+        });
+        for (name in this._opStrata[i].targets) {
+          if (this._opStrata[i].targets.hasOwnProperty(name)) {
+            collection = this._collections[name];
+            collection._delta = Ix.Enumerable.fromArray(
+              collection._newData.except(collection._data, cmpObj).toArray()
+            );
+          }
+        }
+        // If this is the last stratum, move deltas into data
+        if (i === this._opStrata.length - 1) {
+          for (name in this._opStrata[i].targets) {
+            if (this._opStrata[i].targets.hasOwnProperty(name)) {
+              collection = this._collections[name];
+              collection._data = collection._data.concat(collection._delta);
+              collection._delta = Ix.Enumerable.empty();
+            }
+          }
+        }
+      } else {
+        // First, repopulate the deltas of collections from previous strata
+        // and anonymous collections
+        for (name in prevCollections) {
+          if (prevCollections.hasOwnProperty(name)) {
+            collection = this._collections[name];
+            collection._data = collection._oldData;
+            collection._delta = collection._stratumDelta;
+          }
+        };
+        for (name in this._anonCollections) {
+          if (this._anonCollections.hasOwnProperty(name)) {
+            collection = this._anonCollections[name];
+            collection._delta = collection._data;
+            collection._data = Ix.Enumerable.empty();
+          }
+        }
+        // Then, run the seminaive evaluation loop, but only for the targets
+        // in our current stratum
+        firstIter = true;
+        do {
+          this._opStrata[i].ops.forEach(function(op) {
+            op.lhs._newData = Ix.Enumerable.fromArray(
+              op.rhs.getDelta().union(op.lhs._newData, cmpObj).toArray()
+            );
+          });
+          allEmpty = true;
+          for (name in this._opStrata[i].targets) {
+            if (this._opStrata[i].targets.hasOwnProperty(name)) {
+              collection = this._collections[name];
+              collection._stratumDelta = Ix.Enumerable.fromArray(
+                collection._stratumDelta.concat(collection._delta).toArray()
+              );
+              collection._data =
+                collection._oldData.concat(collection._stratumDelta);
+              collection._delta = Ix.Enumerable.fromArray(
+                collection._newData.except(collection._data, cmpObj).toArray()
+              );
+              if (collection._delta.count() !== 0) {
+                allEmpty = false;
+              }
+            }
+          }
+          // If this is the first iteration, move delta into data for
+          // collections from all previous strata
+          if (firstIter) {
+            for (name in prevCollections) {
+              if (prevCollections.hasOwnProperty(name)) {
+                collection = this._collections[name];
+                collection._data =
+                  collection._oldData.concat(collection._stratumDelta);
+                collection._delta = Ix.Enumerable.empty();
+              }
+            }
+            for (name in this._anonCollections) {
+              if (this._anonCollections.hasOwnProperty(name)) {
+                collection = this._anonCollections[name];
+                collection._data = collection._delta;
+                collection._delta = Ix.Enumerable.empty();
+              }
+            }
+            firstIter = false;
+          }
+        } while (!allEmpty);
+        // Update prevCollections with targets from this stratum
+        for (name in this._opStrata[i].targets) {
+          if (this._opStrata[i].targets.hasOwnProperty(name)) {
+            prevCollections[name] = true;
+          }
         }
       }
     }
-  } while (!allEmpty);
+  }
 
   for (name in this._collections) {
     if (this._collections.hasOwnProperty(name)) {
       console.log(name, this._collections[name]._data.toArray());
+    }
+  }
+  for (name in this._anonCollections) {
+    if (this._anonCollections.hasOwnProperty(name)) {
+      console.log(name, this._anonCollections[name]._data.toArray());
     }
   }
 };

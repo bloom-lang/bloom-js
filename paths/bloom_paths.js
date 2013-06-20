@@ -2,6 +2,7 @@ var Bloom = require('./Bloom');
 
 var Paths = function() {
   this._collections = {};
+  this._anonCollections = {};
   this._collectionNodes = {};
   this._connectedComponents = {};
   this._ops = [];
@@ -67,6 +68,7 @@ Paths.prototype.initializeOps = function() {
 
   this.op(':=', this._collections.shortest, this._collections.paths.groupBy(
     function(path) { return JSON.stringify([path.from, path.to]); },
+    function(path) { return path; },
     function(k, ps) {
       var res;
       var min = Number.POSITIVE_INFINITY;
