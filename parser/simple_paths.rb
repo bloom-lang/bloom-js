@@ -17,7 +17,7 @@ class ShortestPaths
       [l.from, p.to, l.to, l.cost+p.cost]
     end
 
-    shortest := path.argmin([path.from, path.to], path.cost)
+    #shortest := path.argmin([path.from, path.to], path.cost)
   end
 end
 
@@ -32,6 +32,7 @@ program.link := [['a', 'b', 1], \
                  ['c', 'd', 1], \
                  ['d', 'e', 1]]
 
+program.shortest := program.path.argmin([program.path.from, program.path.to], program.path.cost)
 
 program.tick() # one timestamp is enough for this simple program
 
@@ -40,3 +41,4 @@ puts "----"
 # now lets add an extra link and recompute
 program.link := [['e', 'f', 1]]
 program.tick()
+

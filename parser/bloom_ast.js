@@ -21,6 +21,9 @@ exports.classBlock = function(name, statements) {
       var res =
         'var ' + this.name + ' = function() {\n' +
           'this._collections = {};\n' +
+          'this._anonCollections = {};\n' +
+          'this._collectionNodes = {};\n' +
+          'this._connectedComponents = {};\n' +
           'this._ops = [];\n' +
           'this.initializeState();\n' +
           'this.initializeOps();\n' +
@@ -103,10 +106,28 @@ exports.bloomStmt = function(destCollection, bloomOp, srcCollection) {
     bloomOp: bloomOp,
     destCollection: destCollection,
     srcCollection: srcCollection,
+    target: null,
+    monotomicDeps: [],
+    nonMonotomicDeps: [],
     genCode: function() {
-      return this.opPrefix + '.op(' + this.bloomOp + ',' +
-        this.destCollection.genCode() + ',' + this.srcCollection.genCode() +
-        ');\n';
+      var res = this.opPrefix + '.op(' + this.bloomOp + ',' +
+        this.destCollection.genCode() + ',' + this.srcCollection.genCode()
+        + ', { target: ' + this.target + ', monotomicDeps: [';
+        this.monotomicDeps.forEach(function(dep) {
+          res += dep + ', ';
+        });
+        if (this.monotomicDeps.length > 0) {
+          res = res.slice(0, -2);
+        }
+        res += '], nonMonotomicDeps: ['
+        this.nonMonotomicDeps.forEach(function(dep) {
+          res += dep + ', ';
+        });
+        if (this.nonMonotomicDeps.length > 0) {
+          res = res.slice(0, -2);
+        }
+        res += '] });\n';
+        return res;
     }
   };
 };
@@ -129,6 +150,17 @@ exports.assignmentStmt = function(target, value) {
     genCode: function() {
       return 'var ' + this.target.genCode() + ' = ' + this.value.genCode() +
         ';\n';
+    }
+  };
+};
+
+exports.assignmentStmtNoDecl = function(target, value) {
+  return {
+    type: 'assignment_stmt_no_decl',
+    target: target,
+    value: value,
+    genCode: function() {
+      return this.target.genCode() + ' = ' + this.value.genCode() + ';\n';
     }
   };
 };
@@ -345,6 +377,22 @@ exports.funcExpr = function(args, statements) {
         res += this.statements[i].genCode();
       }
       res += '}';
+      return res;
+    }
+  };
+};
+
+exports.ifStmt = function(cond, statements) {
+  return {
+    type: 'if_stmt',
+    cond: cond,
+    statements: statements,
+    genCode: function() {
+      res = 'if (' + this.cond.genCode() + ') {\n';
+      this.statements.forEach(function(statement) {
+        res += statement.genCode();
+      });
+      res += '}\n';
       return res;
     }
   };

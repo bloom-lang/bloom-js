@@ -68,15 +68,97 @@ var rewriteFuncExpr = function(collectionNames, funcExpr, stateSpecs) {
 };
 
 var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
-  bloomStmt.destCollection =
-    genCollectionRef(bloomStmt.opPrefix,
-                     getCollectionName(bloomStmt.destCollection));
+  var target = getCollectionName(bloomStmt.destCollection);
+  bloomStmt.destCollection = genCollectionRef(bloomStmt.opPrefix, target);
+  bloomStmt.target = JSON.stringify(target);
   if (bloomStmt.srcCollection.type === 'var_name') {
     bloomStmt.srcCollection = genCollectionRef(bloomStmt.opPrefix,
                                                bloomStmt.srcCollection.name);
+    bloomStmt.monotomicDeps.push(JSON.stringify(bloomStmt.srcCollection.name));
+  } else if (bloomStmt.srcCollection.type === 'call') {
+    var func = bloomStmt.srcCollection.func;
+    var args = bloomStmt.srcCollection.args;
+    if (func.type === 'attribute_ref') {
+      var funcName = func.attribute.name;
+      if (funcName === 'argmin') {
+        var collectionName = getCollectionName(func.obj);
+        bloomStmt.nonMonotomicDeps.push(JSON.stringify(collectionName));
+        var keyRefs = [];
+        args[0].arr.forEach(function(attrRef) {
+          keyRefs.push(ast.attributeRef(
+            ast.varName(collectionName),
+            ast.varName(attrRef.attribute.name)
+          ));
+        });
+        var keyExpr = genIndexedColumnRefs(ast.arrDisplay(keyRefs), stateSpecs);
+        var minExpr = genIndexedColumnRefs(
+          ast.attributeRef(
+            ast.varName(collectionName),
+            ast.varName(args[1].attribute.name)
+          ),
+          stateSpecs
+        );
+        bloomStmt.srcCollection = ast.call(
+          ast.attributeRef(
+            genCollectionRef(bloomStmt.opPrefix, collectionName),
+            ast.varName('groupBy')
+          ),
+          [
+            ast.funcExpr(
+              [ast.varName(collectionName)],
+              [ast.exprStmt(genJSONStringify(keyExpr))]
+            ),
+            ast.funcExpr(
+              [ast.varName('x')],
+              [ast.exprStmt(ast.varName('x'))]
+            ),
+            ast.funcExpr(
+              [ast.varName('k'), ast.varName('xs')],
+              [
+                ast.assignmentStmt(
+                  ast.varName('res'),
+                  ast.varName('undefined')
+                ),
+                ast.assignmentStmt(
+                  ast.varName('min'),
+                  ast.attributeRef(
+                    ast.varName('Number'),
+                    ast.varName('POSITIVE_INFINITY')
+                  )
+                ),
+                ast.exprStmt(ast.call(
+                  ast.attributeRef(
+                    ast.varName('xs'),
+                    ast.varName('forEach')
+                  ),
+                  [ast.funcExpr(
+                    [ast.varName(collectionName)],
+                    [
+                      ast.ifStmt(
+                        ast.binop(minExpr, '<', ast.varName('min')),
+                        [
+                          ast.assignmentStmtNoDecl(ast.varName('min'), minExpr),
+                          ast.assignmentStmtNoDecl(
+                            ast.varName('res'),
+                            ast.varName(collectionName)
+                          )
+                        ]
+                      ),
+                      ast.exprStmt(ast.varName('null'))
+                    ]
+                  )]
+                )),
+                ast.exprStmt(ast.varName('res'))
+              ]
+            )
+          ]
+        );
+      }
+    }
   } else if (bloomStmt.srcCollection.type === 'primary_block') {
     var primary = bloomStmt.srcCollection.primary;
     if (primary.type === 'var_name') {
+      bloomStmt.monotomicDeps.push(JSON.stringify(primary.name));
       bloomStmt.srcCollection.primary = ast.attributeRef(
         genCollectionRef(bloomStmt.opPrefix, primary.name),
         ast.varName('select')
@@ -90,6 +172,8 @@ var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
         var rightJoinKeys = [];
         var leftCollectionName = getCollectionName(primary.func.obj.left);
         var rightCollectionName = getCollectionName(primary.func.obj.right);
+        bloomStmt.monotomicDeps.push(JSON.stringify(leftCollectionName));
+        bloomStmt.monotomicDeps.push(JSON.stringify(rightCollectionName));
         rewriteFuncExpr([leftCollectionName, rightCollectionName],
                         bloomStmt.srcCollection.funcExpr, stateSpecs);
         primary.args[0].kvPairs.forEach(function(kvPair) {
@@ -116,21 +200,21 @@ var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
         }
         bloomStmt.srcCollection = ast.call(
           ast.attributeRef(
-            genCollectionRef(bloomStmt.opPrefix,leftCollectionName),
+            genCollectionRef(bloomStmt.opPrefix, leftCollectionName),
             ast.varName('join')
-        ),
-        [
-          genCollectionRef(bloomStmt.opPrefix, rightCollectionName),
-          ast.funcExpr(
-            [ast.varName('x')],
-            [ast.exprStmt(leftJoinExpr)]
           ),
-          ast.funcExpr(
-            [ast.varName('y')],
-            [ast.exprStmt(rightJoinExpr)]
-          ),
-          bloomStmt.srcCollection.funcExpr
-        ]
+          [
+            genCollectionRef(bloomStmt.opPrefix, rightCollectionName),
+            ast.funcExpr(
+              [ast.varName('x')],
+              [ast.exprStmt(leftJoinExpr)]
+            ),
+            ast.funcExpr(
+              [ast.varName('y')],
+              [ast.exprStmt(rightJoinExpr)]
+            ),
+            bloomStmt.srcCollection.funcExpr
+          ]
         );
       }
     }
