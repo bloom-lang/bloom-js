@@ -74,7 +74,7 @@ var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
   if (bloomStmt.srcCollection.type === 'var_name') {
     bloomStmt.srcCollection = genCollectionRef(bloomStmt.opPrefix,
                                                bloomStmt.srcCollection.name);
-    bloomStmt.monotomicDeps.push(JSON.stringify(bloomStmt.srcCollection.name));
+    bloomStmt.monotonicDeps.push(JSON.stringify(bloomStmt.srcCollection.name));
   } else if (bloomStmt.srcCollection.type === 'call') {
     var func = bloomStmt.srcCollection.func;
     var args = bloomStmt.srcCollection.args;
@@ -82,7 +82,7 @@ var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
       var funcName = func.attribute.name;
       if (funcName === 'argmin') {
         var collectionName = getCollectionName(func.obj);
-        bloomStmt.nonMonotomicDeps.push(JSON.stringify(collectionName));
+        bloomStmt.nonMonotonicDeps.push(JSON.stringify(collectionName));
         var keyRefs = [];
         args[0].arr.forEach(function(attrRef) {
           keyRefs.push(ast.attributeRef(
@@ -158,7 +158,7 @@ var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
   } else if (bloomStmt.srcCollection.type === 'primary_block') {
     var primary = bloomStmt.srcCollection.primary;
     if (primary.type === 'var_name') {
-      bloomStmt.monotomicDeps.push(JSON.stringify(primary.name));
+      bloomStmt.monotonicDeps.push(JSON.stringify(primary.name));
       bloomStmt.srcCollection.primary = ast.attributeRef(
         genCollectionRef(bloomStmt.opPrefix, primary.name),
         ast.varName('select')
@@ -172,8 +172,8 @@ var rewriteBloomStmt = function(bloomStmt, stateSpecs) {
         var rightJoinKeys = [];
         var leftCollectionName = getCollectionName(primary.func.obj.left);
         var rightCollectionName = getCollectionName(primary.func.obj.right);
-        bloomStmt.monotomicDeps.push(JSON.stringify(leftCollectionName));
-        bloomStmt.monotomicDeps.push(JSON.stringify(rightCollectionName));
+        bloomStmt.monotonicDeps.push(JSON.stringify(leftCollectionName));
+        bloomStmt.monotonicDeps.push(JSON.stringify(rightCollectionName));
         rewriteFuncExpr([leftCollectionName, rightCollectionName],
                         bloomStmt.srcCollection.funcExpr, stateSpecs);
         primary.args[0].kvPairs.forEach(function(kvPair) {

@@ -37,20 +37,20 @@ prototype.op = function(type, lhs, rhs, spec) {
     lhs: lhs,
     rhs: rhs,
     target: spec.target,
-    fullyNonMonotomic: spec.monotomicDeps.length === 0 &&
-      spec.nonMonotomicDeps.length > 0
+    fullyNonMonotonic: spec.monotonicDeps.length === 0 &&
+      spec.nonMonotonicDeps.length > 0
   });
   if (type === ':=') {
     targetNode = this._collectionNodes[spec.target]
-    spec.monotomicDeps.forEach(function(parentName) {
-      if (targetNode.parents[parentName] !== 'non-monotomic') {
-        targetNode.parents[parentName] = 'monotomic';
-        self._collectionNodes[parentName].children[spec.target] = 'monotomic';
+    spec.monotonicDeps.forEach(function(parentName) {
+      if (targetNode.parents[parentName] !== 'non-monotonic') {
+        targetNode.parents[parentName] = 'monotonic';
+        self._collectionNodes[parentName].children[spec.target] = 'monotonic';
       }
     });
-    spec.nonMonotomicDeps.forEach(function(parentName) {
-      targetNode.parents[parentName] = 'non-monotomic';
-      self._collectionNodes[parentName].children[spec.target] = 'non-monotomic';
+    spec.nonMonotonicDeps.forEach(function(parentName) {
+      targetNode.parents[parentName] = 'non-monotonic';
+      self._collectionNodes[parentName].children[spec.target] = 'non-monotonic';
     });
     this._opStrata = null;
   }
@@ -114,17 +114,17 @@ prototype.stratifyOps = function() {
           if (node.children.hasOwnProperty(childName)) {
             childNode = this._collectionNodes[childName];
             if (childNode.ccNum === -1 || childNode.ccNum === ccCounter) {
-              if (node.children[childName] === 'non-monotomic') {
-                console.error('Error: Non-monotomic loop detected in ' +
+              if (node.children[childName] === 'non-monotonic') {
+                console.error('Error: Non-monotonic loop detected in ' +
                               'collection dependency graph, caused by the ' +
-                              'non-monotomic op from %s into %s',
+                              'non-monotonic op from %s into %s',
                               name, childName);
               }
               if (childNode.ccNum === -1) {
                 ccToVisit.push(childName);
               }
             } else {
-              if (comp.children[childNode.ccNum] !== 'non-monotomic') {
+              if (comp.children[childNode.ccNum] !== 'non-monotonic') {
                 if (comp.children[childNode.ccNum] === undefined) {
                   this._connectedComponents[childNode.ccNum].numParents++;
                 }
@@ -137,7 +137,7 @@ prototype.stratifyOps = function() {
     }
   }
   // Topologically sort the connected components into layers separated by
-  // non-monotomic operations
+  // non-monotonic operations
   for (num in this._connectedComponents) {
     if (this._connectedComponents.hasOwnProperty(num) &&
         this._connectedComponents[num].numParents === 0) {
@@ -151,9 +151,9 @@ prototype.stratifyOps = function() {
     for (childNum in comp.children) {
       if (comp.children.hasOwnProperty(childNum)) {
         childComp = this._connectedComponents[childNum];
-        if (comp.children[childNum] === 'monotomic') {
+        if (comp.children[childNum] === 'monotonic') {
           childComp.stratum = Math.max(childComp.stratum, comp.stratum);
-        } else if (comp.children[childNum] === 'non-monotomic') {
+        } else if (comp.children[childNum] === 'non-monotonic') {
           childComp.stratum = Math.max(childComp.stratum, comp.stratum + 1);
         }
         childComp.numParents--;
@@ -167,7 +167,7 @@ prototype.stratifyOps = function() {
   this._ops.forEach(function(op) {
     num = self._collectionNodes[op.target].ccNum;
     ccStratum = self._connectedComponents[num].stratum;
-    opStratum = op.fullyNonMonotomic ? 2 * ccStratum - 1: 2 * ccStratum;
+    opStratum = op.fullyNonMonotonic ? 2 * ccStratum - 1: 2 * ccStratum;
     if (self._opStrata[opStratum] === undefined) {
       self._opStrata[opStratum] = {
         targets: {},
@@ -230,7 +230,7 @@ prototype.tick = function() {
   }
   for (i = 0; i < this._opStrata.length; i++) {
     if (this._opStrata[i] !== undefined) {
-      // If i is odd, all operations are purely non-monotomic, so there is no
+      // If i is odd, all operations are purely non-monotonic, so there is no
       // need to run a loop and we operate on previous data rather than deltas
       if (i % 2 === 1) {
         this._opStrata[i].ops.forEach(function(op) {

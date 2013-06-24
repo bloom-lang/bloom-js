@@ -107,23 +107,23 @@ exports.bloomStmt = function(destCollection, bloomOp, srcCollection) {
     destCollection: destCollection,
     srcCollection: srcCollection,
     target: null,
-    monotomicDeps: [],
-    nonMonotomicDeps: [],
+    monotonicDeps: [],
+    nonMonotonicDeps: [],
     genCode: function() {
       var res = this.opPrefix + '.op(' + this.bloomOp + ',' +
         this.destCollection.genCode() + ',' + this.srcCollection.genCode()
-        + ', { target: ' + this.target + ', monotomicDeps: [';
-        this.monotomicDeps.forEach(function(dep) {
+        + ', { target: ' + this.target + ', monotonicDeps: [';
+        this.monotonicDeps.forEach(function(dep) {
           res += dep + ', ';
         });
-        if (this.monotomicDeps.length > 0) {
+        if (this.monotonicDeps.length > 0) {
           res = res.slice(0, -2);
         }
-        res += '], nonMonotomicDeps: ['
-        this.nonMonotomicDeps.forEach(function(dep) {
+        res += '], nonMonotonicDeps: ['
+        this.nonMonotonicDeps.forEach(function(dep) {
           res += dep + ', ';
         });
-        if (this.nonMonotomicDeps.length > 0) {
+        if (this.nonMonotonicDeps.length > 0) {
           res = res.slice(0, -2);
         }
         res += '] });\n';

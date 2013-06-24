@@ -31,8 +31,8 @@ Paths.prototype.initializeOps = function() {
   }),
   {
     target: 'paths',
-    monotomicDeps: ['links'],
-    nonMonotomicDeps: []
+    monotonicDeps: ['links'],
+    nonMonotonicDeps: []
   });
 
  this.op(':=', this._collections['links'],
@@ -43,8 +43,8 @@ Paths.prototype.initializeOps = function() {
       {from: 'd', to: 'e', cost: 1}],
   {
     target: 'links',
-    monotomicDeps: [],
-    nonMonotomicDeps: []
+    monotonicDeps: [],
+    nonMonotonicDeps: []
   });
 
   this.op(':=', this._collections.paths, this._collections.links.join(
@@ -62,8 +62,8 @@ Paths.prototype.initializeOps = function() {
   ),
   {
     target: 'paths',
-    monotomicDeps: ['links', 'paths'],
-    nonMonotomicDeps: []
+    monotonicDeps: ['links', 'paths'],
+    nonMonotonicDeps: []
   });
 
   this.op(':=', this._collections.shortest, this._collections.paths.groupBy(
@@ -83,8 +83,8 @@ Paths.prototype.initializeOps = function() {
   ),
   {
     target: 'shortest',
-    monotomicDeps: [],
-    nonMonotomicDeps: ['paths']
+    monotonicDeps: [],
+    nonMonotonicDeps: ['paths']
   });
 };
 
@@ -97,8 +97,8 @@ console.log('-----');
 p.op(':=', p._collections.links, [{from: 'e', to: 'f', cost: 1}],
   {
     target: 'links',
-    monotomicDeps: [],
-    nonMonotomicDeps: []
+    monotonicDeps: [],
+    nonMonotonicDeps: []
   });
 
 p.tick();
