@@ -32,6 +32,15 @@ prototype.op = function(type, lhs, rhs, spec) {
   if (Object.prototype.toString.call(rhs) === '[object Array]') {
     rhs = this.addCollectionFromArray(rhs);
   }
+  if (type !== ':=') {
+    spec = {};
+  }
+  if (spec.monotonicDeps === undefined) {
+    spec.monotonicDeps = [];
+  }
+  if (spec.nonMonotonicDeps === undefined) {
+    spec.nonMonotonicDeps = [];
+  }
   this._ops.push({
     type: type,
     lhs: lhs,
@@ -165,19 +174,21 @@ prototype.stratifyOps = function() {
   }
   this._opStrata = [];
   this._ops.forEach(function(op) {
-    num = self._collectionNodes[op.target].ccNum;
-    ccStratum = self._connectedComponents[num].stratum;
-    opStratum = op.fullyNonMonotonic ? 2 * ccStratum - 1: 2 * ccStratum;
-    if (self._opStrata[opStratum] === undefined) {
-      self._opStrata[opStratum] = {
-        targets: {},
-        ops: []
-      };
+    if (op.type === ':=') {
+      num = self._collectionNodes[op.target].ccNum;
+      ccStratum = self._connectedComponents[num].stratum;
+      opStratum = op.fullyNonMonotonic ? 2 * ccStratum - 1: 2 * ccStratum;
+      if (self._opStrata[opStratum] === undefined) {
+        self._opStrata[opStratum] = {
+          targets: {},
+          ops: []
+        };
+      }
+      self._connectedComponents[num].members.forEach(function(collectionName) {
+        self._opStrata[opStratum].targets[collectionName] = true;
+      });
+      self._opStrata[opStratum].ops.push(op);
     }
-    self._connectedComponents[num].members.forEach(function(collectionName) {
-      self._opStrata[opStratum].targets[collectionName] = true;
-    });
-    self._opStrata[opStratum].ops.push(op);
   });
 };
 
@@ -246,13 +257,18 @@ prototype.tick = function() {
             );
           }
         }
-        // If this is the last stratum, move deltas into data
-        if (i === this._opStrata.length - 1) {
-          for (name in this._opStrata[i].targets) {
-            if (this._opStrata[i].targets.hasOwnProperty(name)) {
+        // If next stratum is undefined (incl. if this is the last stratum),
+        // or if this target is not found in next stratum, move deltas into data
+        for (name in this._opStrata[i].targets) {
+          if (this._opStrata[i].targets.hasOwnProperty(name)) {
+            if (this._opStrata[i+1] === undefined ||
+                !this._opStrata[i+1].targets.hasOwnProperty(name)) {
               collection = this._collections[name];
-              collection._data = collection._data.concat(collection._delta);
+              collection._stratumDelta = collection._delta;
+              collection._data =
+                collection._oldData.concat(collection._stratumDelta);
               collection._delta = Ix.Enumerable.empty();
+              prevCollections[name] = true;
             }
           }
         }
@@ -330,6 +346,7 @@ prototype.tick = function() {
     }
   }
 
+  /*
   for (name in this._collections) {
     if (this._collections.hasOwnProperty(name)) {
       console.log(name, this._collections[name]._data.toArray());
@@ -340,6 +357,7 @@ prototype.tick = function() {
       console.log(name, this._anonCollections[name]._data.toArray());
     }
   }
+ */
 };
 
 module.exports = Bloom;

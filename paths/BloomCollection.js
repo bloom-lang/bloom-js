@@ -44,6 +44,15 @@ prototype.select = function(fn) {
 };
 prototype.map = prototype.select;
 
+prototype.selectMany = function(fn) {
+  var self = this;
+  return genTempCollection(function() {
+    return self.getData().selectMany(fn);
+  }, function() {
+    return self.getDelta().selectMany(fn);
+  });
+};
+
 prototype.where = function(fn) {
   var self = this;
   return genTempCollection(function() {

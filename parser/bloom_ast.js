@@ -25,6 +25,7 @@ exports.classBlock = function(name, statements) {
           'this._collectionNodes = {};\n' +
           'this._connectedComponents = {};\n' +
           'this._ops = [];\n' +
+          'this._opStrata = null;\n' +
           'this.initializeState();\n' +
           'this.initializeOps();\n' +
         '};\n' +
