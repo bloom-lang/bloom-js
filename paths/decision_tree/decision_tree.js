@@ -1,10 +1,11 @@
 var fs = require('fs');
-var Bloom = require('./Bloom');
+var Bloom = require('../Bloom');
 var Ix = require('ix');
 
 var DecisionTree = function() {
   this._collections = {};
   this._anonCollections = {};
+  this._collectionKeys = {};
   this._collectionNodes = {};
   this._connectedComponents = {};
   this._ops = [];
@@ -23,7 +24,7 @@ var locArr = [];
 var dataCols = [];
 for (i = 0; i < dataRows.length; i++) {
   dataArr.push([i].concat(dataRows[i].split(',')));
-  locArr.push([i, 1]);
+  locArr.push([i, '[]']);
 }
 numFeatures = dataArr[0].length - 2;
 for (i = 0; i < numFeatures; i++) {
@@ -33,24 +34,23 @@ dataCols.push('class');
 
 DecisionTree.prototype.initializeState = function() {
   this.addCollection('training_data', 'table', ['id'], dataCols);
-  this.addCollection('training_loc', 'table', ['id'], ['node_id']);
-  this.addCollection('training_data_loc', 'table', ['id'], dataCols.concat('node_id'));
-  this.addCollection('new_nodes', 'table', ['id'], []);
-  this.addCollection('decision_tree', 'table', ['node_id'], ['feature_idx', 'split_val', 'children']);
+  this.addCollection('training_loc', 'table', ['id'], ['tree_loc']);
+  this.addCollection('decision_tree', 'table', ['tree_loc'], ['feature_idx', 'split_val']);
 
-  this.addCollection('location_class_count', 'scratch', ['node_id', 'class', 'count'], []);
-  this.addCollection('location_count', 'scratch', ['node_id', 'count'], []);
+  //this.addCollection('location_class_count', 'scratch', ['tree_loc', 'class', 'count'], []);
+  //this.addCollection('location_count', 'scratch', ['tree_loc', 'count'], []);
+  this.addCollection('training_data_loc', 'scratch', ['id'], dataCols.concat('tree_loc'));
   this.addCollection('training_data_groups', 'scratch', [], []);
-  this.addCollection('feature_entropy', 'scratch', ['node_id', 'feature_idx'], ['split_val', 'entropy']);
-  this.addCollection('best_features', 'scratch', ['node_id'], ['feature_idx', 'split_val', 'entropy'])
+  this.addCollection('feature_entropy', 'scratch', ['tree_loc', 'feature_idx'], ['split_val', 'entropy']);
+  this.addCollection('best_features', 'scratch', ['tree_loc'], ['feature_idx', 'split_val', 'entropy'])
 };
 
 DecisionTree.prototype.initializeOps = function() {
-  var i, curNodeId = 1;
+  var i;
 
-  this.op(':=', this._collections.new_nodes, [1], {target: 'training_data'});
   this.op(':=', this._collections.training_data, dataArr, {target: 'training_data'});
-  this.op(':=', this._collections.training_loc, locArr, {target: 'training_loc'});
+  this.op(':=', this._collections.training_loc, [], {target: 'training_loc'});
+  this.addDelta(this._collections.training_loc, locArr);
 
   this.op(':=', this._collections.training_data_loc, this._collections.training_data.join(
     this._collections.training_loc,
@@ -61,9 +61,10 @@ DecisionTree.prototype.initializeOps = function() {
     }
   ), {
     target: 'training_data_loc',
-    monotonicDeps: ['training_data']
+    monotonicDeps: ['training_data', 'training_loc']
   });
 
+  /*
   this.op(':=', this._collections.location_class_count, this._collections.training_data_loc.groupBy(
     function(data_loc) {
       return JSON.stringify([data_loc[numFeatures+2], data_loc[numFeatures+1]]);
@@ -93,6 +94,7 @@ DecisionTree.prototype.initializeOps = function() {
     target: 'location_count',
     nonMonotonicDeps: ['location_class_count']
   });
+ */
 
   this.op(':=', this._collections.training_data_groups, this._collections.training_data_loc.groupBy(
     function(data_loc) { return data_loc[numFeatures+2]; },
@@ -193,39 +195,41 @@ DecisionTree.prototype.initializeOps = function() {
 
   this.op(':=', this._collections.decision_tree, this._collections.best_features.select(
     function(feature) {
-      return [feature[0], feature[1], feature[2], [curNodeId-1, curNodeId]];
+      return [feature[0], feature[1], feature[2]];
     }
   ), {
     target: 'decision_tree',
     monotonicDeps: ['best_features']
   });
 
-  /*
-  this.op('<-', this._collections.new_nodes, this._collections.new_nodes);
-  this.op('<+', this._collections.new_nodes, this._collections.decision_tree.selectMany(
-    function(node) {
-      return Ix.Enumerable.fromArray([[node[3][0]], [node[3][1]]]);
-    }
-  ));
-
-
   this.op('<+-', this._collections.training_loc, this._collections.training_data_loc.join(
     this._collections.decision_tree,
     function(dataLoc) { return dataLoc[numFeatures+2]; },
     function(node) { return node[0]; },
     function(dataLoc, node) {
-      if (parseFloat(dataLoc[node[1]+1]) <= parseFloat(node[2])) {
-        dataLoc[numFeatures+2] = node[3][0];
-      } else {
-        dataLoc[numFeatures+2] = node[3][1];
+      var nodeLoc = JSON.parse(node[0]);
+      if (node[2] !== Number.NEGATIVE_INFINITY) {
+        if (parseFloat(dataLoc[node[1]+1]) <= parseFloat(node[2])) {
+          nodeLoc.push(0);
+        } else {
+          nodeLoc.push(1);
+        }
       }
-      return dataLoc;
+      return [dataLoc[0], JSON.stringify(nodeLoc)];
     }
-  ));*/
+  ));
 };
 
 var d = new DecisionTree();
 
 d.tick();
+d.tick();
+d.tick();
+d.tick();
+d.tick();
+d.tick();
+d.tick();
 
+//console.log(d._collections.feature_entropy._data.toArray());
+//console.log(d._collections.training_loc._data.toArray());
 console.log(d._collections.decision_tree._data.toArray());

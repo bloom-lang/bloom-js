@@ -14,6 +14,7 @@ var BloomCollection = function(name, type, initArr) {
     this._newData = Ix.Enumerable.empty();
     this._delta = Ix.Enumerable.empty();
     this._stratumDelta = Ix.Enumerable.empty();
+    this._replaceData = Ix.Enumerable.empty();
   }
 }
 

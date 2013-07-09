@@ -1,6 +1,8 @@
 var Ix = require('ix');
 var BloomCollection = require('./BloomCollection');
-var cmpObj = require('./util').cmpObj;
+var util = require('./util');
+var cmpObj = util.cmpObj;
+var genCmpArrKeys = util.genCmpArrKeys;
 
 var Bloom = function() { };
 
@@ -14,6 +16,7 @@ prototype.addCollection = function(name, type, keys, vals) {
     vals = type === 'channel' ? [] : ['val'];
   }
   this._collections[name] = new BloomCollection(name, type);
+  this._collectionKeys[name] = keys;
   this._collectionNodes[name] = {
     children: {},
     parents: {}
@@ -26,6 +29,16 @@ prototype.addCollectionFromArray = function(arr) {
   this._anonCollections[name] = new BloomCollection('', 'anon', arr);
   return this._anonCollections[name];
 };
+
+prototype.addDelta = function(lhs, rhs) {
+  if (Object.prototype.toString.call(rhs) === '[object Array]') {
+    rhs = new BloomCollection('', 'anon', rhs);
+    rhs._delta = rhs._data;
+  }
+  lhs._delta = Ix.Enumerable.fromArray(
+    rhs._delta.union(lhs._delta, cmpObj).toArray()
+  );
+}
 
 prototype.op = function(type, lhs, rhs, spec) {
   var targetNode, self = this;
@@ -192,45 +205,43 @@ prototype.stratifyOps = function() {
   });
 };
 
-/*
-// Naive Evaluation
-prototype.tick = function() {
-  var name, allSame, self = this;
-  do {
-    for (name in this._collections) {
-      this._collections[name]._newData = this._collections[name]._data;
-    }
-    this._ops.forEach(function(op) {
-      if (op.type === ':=') {
-        op.lhs._newData = Ix.Enumerable.fromArray(
-          op.rhs.getData().union(op.lhs._newData, cmpObj).toArray()
-        );
-      }
-    });
-    allSame = true;
-    for (name in this._collections) {
-      if (this._collections[name]._newData.count() !==
-          this._collections[name]._data.count()) {
-        allSame = false;
-      }
-    }
-    for (name in this._collections) {
-      this._collections[name]._data = this._collections[name]._newData;
-    }
-  } while (!allSame);
-
-  for (name in this._collections) {
-    console.log(name, this._collections[name]._data.toArray());
-  }
-};*/
-
 // Seminaive Evaluation
 prototype.tick = function() {
-  var i, name, collection, allEmpty, firstIter, prevCollections = [],
-    self = this;
+  var i, name, collection, allEmpty, firstIter,
+    prevCollections = [], self = this;
   if (this._opStrata === null) {
     this.stratifyOps();
   }
+  // Clear scratch collections
+  for (name in this._collections) {
+    if (this._collections.hasOwnProperty(name)) {
+      collection = this._collections[name];
+      if (collection._type === 'scratch') {
+        collection._data = Ix.Enumerable.empty();
+        collection._delta = Ix.Enumerable.empty();
+      }
+    }
+  }
+  // Include updates from deferred operations
+  for (name in this._collections) {
+    if (this._collections.hasOwnProperty(name)) {
+      collection = this._collections[name];
+      if (collection._replaceData.count() !== 0) {
+        // This assumes no other delta already exists for this collection
+        collection._delta = Ix.Enumerable.fromArray(
+            collection._replaceData.except(collection._data, cmpObj).toArray()
+        );
+        collection._data = Ix.Enumerable.fromArray(
+            collection._data.except(
+                collection._delta,
+                genCmpArrKeys(this._collectionKeys[name].length)
+            ).toArray()
+        );
+        collection._replaceData = Ix.Enumerable.empty();
+      }
+    }
+  }
+  // Save old data
   for (name in this._collections) {
     if (this._collections.hasOwnProperty(name)) {
       this._collections[name]._oldData = Ix.Enumerable.fromArray(
@@ -239,6 +250,7 @@ prototype.tick = function() {
       this._collections[name]._stratumDelta = Ix.Enumerable.empty();
     }
   }
+  // Handle instantaneous merges
   for (i = 0; i < this._opStrata.length; i++) {
     if (this._opStrata[i] !== undefined) {
       // If i is odd, all operations are purely non-monotonic, so there is no
@@ -255,6 +267,7 @@ prototype.tick = function() {
             collection._delta = Ix.Enumerable.fromArray(
               collection._newData.except(collection._data, cmpObj).toArray()
             );
+            collection._newData = Ix.Enumerable.empty();
           }
         }
         // If next stratum is undefined (incl. if this is the last stratum),
@@ -310,6 +323,7 @@ prototype.tick = function() {
               collection._delta = Ix.Enumerable.fromArray(
                 collection._newData.except(collection._data, cmpObj).toArray()
               );
+              collection._newData = Ix.Enumerable.empty();
               if (collection._delta.count() !== 0) {
                 allEmpty = false;
               }
@@ -345,19 +359,14 @@ prototype.tick = function() {
       }
     }
   }
-
-  /*
-  for (name in this._collections) {
-    if (this._collections.hasOwnProperty(name)) {
-      console.log(name, this._collections[name]._data.toArray());
+  // Handle deferred operators
+  this._ops.forEach(function(op) {
+    if (op.type === '<+-') {
+      op.lhs._replaceData = Ix.Enumerable.fromArray(
+        op.rhs.getData().union(op.lhs._replaceData, cmpObj).toArray()
+      );
     }
-  }
-  for (name in this._anonCollections) {
-    if (this._anonCollections.hasOwnProperty(name)) {
-      console.log(name, this._anonCollections[name]._data.toArray());
-    }
-  }
- */
+  });
 };
 
 module.exports = Bloom;
