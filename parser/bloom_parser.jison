@@ -12,6 +12,7 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 ([ \t\r]*('#'.*)?\n)+     return '\n' // skip comments and blank lines
 \s+                       { /* skip whitespace other than newline */ }
 'class'                   return 'CLASS'
+'module'                  return 'MODULE'
 'state'                   return 'STATE'
 'bloom'                   return 'BLOOM'
 'table'                   return 'TABLE'
@@ -23,13 +24,15 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 'do'                      return 'DO'
 'end'                     return 'END'
 'puts'                    return 'PUTS'
+'if'                      return 'IF'
+'elsif'                   return 'ELSIF'
+'else'                    return 'ELSE'
 'new'                     return 'NEW'
 {id}                      return 'ID'
 {string}                  return 'STR_LITERAL'
 {number}                  return 'NUM_LITERAL'
 ('#'.*)?<<EOF>>           return 'EOF'
 '=>'                      return '=>'
-':='                      return ':='
 '<~'                      return '<~'
 '<+-'                     return '<+-'
 '<+'                      return '<+'
@@ -38,6 +41,8 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 '!='                      return '!='
 '<='                      return '<='
 '>='                      return '>='
+'&&'                      return '&&'
+'||'                      return '||'
 '<'                       return '<'
 '>'                       return '>'
 '='                       return '='
@@ -68,11 +73,17 @@ id                        [_A-Za-z][_A-Za-z0-9]*
 
 program
     : '\n'* (outer_stmt ('\n'|EOF))* EOF?
-      { return ast.program($2); }
+      { console.log(ast.program($2)); }
     ;
 
 outer_stmt
     : class_block
+    | module_block
+    | statement
+    ;
+
+statement
+    : compound_stmt
     | simple_stmt
     ;
 
@@ -81,10 +92,15 @@ class_block
       -> ast.classBlock($2, $4)
     ;
 
+module_block
+    : MODULE ID '\n' (class_stmt '\n')* END
+      -> ast.classBlock($2, $4)
+    ;
+
 class_stmt
     : state_block
     | bloom_block
-    | simple_stmt
+    | statement
     ;
 
 state_block
@@ -126,20 +142,20 @@ field_list
     ;
 
 bloom_block
-    : BLOOM var_name? DO '\n' (bloom_stmt '\n')* END
+    : BLOOM var_name? DO '\n' (statement '\n')* END
       -> ast.bloomBlock($2, $5)
     ;
 
 bloom_stmt
-    : expression bloom_op primary
+    : var_name bloom_op primary
       -> ast.bloomStmt($1, $2, $3)
     ;
 
 bloom_op
-    : ':='
-      -> "':='"
+    : '<='
+      -> "'<='"
     | '<~'
-      -> "':='"
+      -> "'<~'"
     | '<+-'
       -> "'<+-'"
     | '<+'
@@ -148,10 +164,26 @@ bloom_op
       -> "'<-'"
     ;
 
+/* COMPOUND STATEMENT */
+
+compound_stmt
+    : if_stmt
+    ;
+
+if_stmt
+    : IF expression '\n' (statement '\n')* else_stmt
+    ;
+
+else_stmt
+    : END
+    | ELSIF expression '\n' (statement '\n')* else_stmt
+    | ELSE '\n' (statement '\n')* END
+    ;
+
 /* SIMPLE STATEMENT */
 
 simple_stmt
-    : expression
+    : primary
       -> ast.exprStmt($1)
     | assignment_stmt
     | bloom_stmt
@@ -159,7 +191,7 @@ simple_stmt
     ;
 
 assignment_stmt
-    : var_name '=' expression
+    : assignable '=' expression
       -> ast.assignmentStmt($1, $3)
     ;
 
@@ -193,7 +225,7 @@ and_test
 not_test
     : comparison
     | ('!'|'not') not_test
-      -> ast.unop($1, $2, $3)
+      -> ast.unop($1, $2)
     ;
 
 comparison
@@ -217,7 +249,7 @@ m_expr
 u_expr
     : power
     | ('-'|'+') u_expr
-      -> ast.unop($1, $2, $3)
+      -> ast.unop($1, $2)
     ;
 
 power
@@ -227,7 +259,8 @@ power
     ;
 
 primary
-    : var_name
+    : assignable
+    | sym_literal
     | STR_LITERAL
       -> ast.strLiteral($1)
     | NUM_LITERAL
@@ -235,16 +268,25 @@ primary
     | parenth_form
     | arr_display
     | hash_display
-    | attribute_ref
-    | subscription
     | call
     | new_expr
     | primary_block
     ;
 
+assignable
+    : var_name
+    | attribute_ref
+    | subscription
+    ;
+
 var_name
     : ID
       -> ast.varName($1);
+    ;
+
+sym_literal
+    : ':' ID
+      -> ast.strLiteral("'"+$1+"'")
     ;
 
 parenth_form
@@ -268,7 +310,7 @@ hash_display
     ;
 
 kv_pair
-    : primary ':' expression
+    : primary '=>' expression
       -> [$1, $3]
     ;
 
@@ -298,9 +340,9 @@ primary_block
     ;
 
 func_expr
-    : '{' '|' id_list '|' simple_stmt '}'
+    : '{' '|' id_list '|' statement '}'
       -> ast.funcExpr($3, [$5]);
-    | DO '|' id_list '|' '\n' (simple_stmt '\n')* END
+    | DO '|' id_list '|' '\n' (statement '\n')* END
       -> ast.funcExpr($3, $6);
     ;
 

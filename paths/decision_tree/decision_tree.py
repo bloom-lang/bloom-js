@@ -2,7 +2,7 @@ import math
 import random
 from copy import deepcopy
 
-ENTROPY_THRESHOLD = 0.0
+ENTROPY_THRESHOLD = 0.2
 
 class Node:
     def __init__(self, loc, entropy=float('inf')):
@@ -112,7 +112,6 @@ def train_tree(data_arr):
             if data_locs[i] == cur_node.loc:
                 cur_data_ids.append(i)
                 cur_data_arr.append(data_arr[i])
-        print cur_node.loc, cur_data_arr
         split_vals = []
         init_acc = min_entropy_init(cur_node, cur_data_arr)
         for fnum in range(num_features):

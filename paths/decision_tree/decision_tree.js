@@ -228,7 +228,6 @@ d.tick();
 d.tick();
 d.tick();
 d.tick();
-d.tick();
 
 //console.log(d._collections.feature_entropy._data.toArray());
 //console.log(d._collections.training_loc._data.toArray());
