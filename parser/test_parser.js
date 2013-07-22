@@ -12,4 +12,4 @@ if (inpFile !== undefined) {
 
 var bloomAst = parser.parse(bloomStr);
 
-console.log(JSON.stringify(bloomAst, null, 2));
+console.log(bloomAst.genJSCode());

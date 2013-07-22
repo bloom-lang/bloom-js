@@ -205,7 +205,8 @@ var TernaryExpr = function(cond, thenExpr, elseExpr) {
 TernaryExpr.prototype = new Base();
 TernaryExpr.prototype.children = ['cond', 'thenExpr', 'elseExpr'];
 TernaryExpr.prototype.genJSCode = function() {
-  return this.cond.genJSCode() + ' ? ' + this.thenExpr + ' : ' + this.elseExpr;
+  return this.cond.genJSCode() + ' ? ' + this.thenExpr.genJSCode() + ' : ' +
+    this.elseExpr.genJSCode();
 };
 exports.TernaryExpr = TernaryExpr;
 
@@ -408,19 +409,56 @@ FuncExpr.prototype.genJSCode = function() {
 };
 exports.FuncExpr = FuncExpr;
 
-var IfStmt = function(cond, statements) {
+var IfStmt = function(cond, thenStmts, elseClause) {
   this.type = 'IfStmt';
   this.cond = cond;
-  this.statements = statements;
+  this.thenStmts = thenStmts;
+  this.elseClause = elseClause;
 };
 IfStmt.prototype = new Base();
-IfStmt.prototype.children = ['cond', 'statements'];
+IfStmt.prototype.children = ['cond', 'thenStmts', 'elseClause'];
 IfStmt.prototype.genJSCode = function() {
   res = 'if (' + this.cond.genJSCode() + ') {\n';
-  this.statements.forEach(function(statement) {
+  this.thenStmts.forEach(function(statement) {
     res += statement.genJSCode();
   });
-  res += '}\n';
+  res += '}' + this.elseClause.genJSCode();
   return res;
 };
 exports.IfStmt = IfStmt;
+
+var ElseIfClause = function(cond, thenStmts, elseClause) {
+  this.type = 'ElseIfClause';
+  this.cond = cond;
+  this.thenStmts = thenStmts;
+  this.elseClause = elseClause;
+};
+ElseIfClause.prototype = new Base();
+ElseIfClause.prototype.children = ['cond', 'thenStmts', 'elseClause'];
+ElseIfClause.prototype.genJSCode = function() {
+  res = ' else if (' + this.cond.genJSCode() + ') {\n';
+  this.thenStmts.forEach(function(statement) {
+    res += statement.genJSCode();
+  });
+  res += '}' + this.elseClause.genJSCode();
+  return res;
+};
+exports.ElseIfClause = ElseIfClause;
+
+var ElseClause = function(statements) {
+  this.type = 'ElseClause';
+  this.statements = statements;
+};
+ElseClause.prototype = new Base();
+ElseClause.prototype.children = ['cond', 'statements'];
+ElseClause.prototype.genJSCode = function() {
+  if (this.statements === null) {
+    return '\n';
+  }
+  res = ' else {\n';
+  this.statements.forEach(function(statement) {
+    res += statement.genJSCode();
+  });
+  return res;
+};
+exports.ElseClause = ElseClause;

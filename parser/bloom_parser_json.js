@@ -131,7 +131,7 @@ var grammar = {
       ["CHANNEL primary", "$$ = new yy.StateDecl($1, $2, ['@address', 'val'], []);"],
       ["CHANNEL primary , field_list", "$$ = new yy.StateDecl($1, $2, $4, []);"],
       ["CHANNEL primary , field_list => field_list", "$$ = new yy.StateDecl($1, $2, $4, $6);"],
-      ["collection_type primary", "$$ = new yy.StateDecl($1, $2, ['key'], ['val']);"],
+      ["collection_type primary", "$$ = new yy.StateDecl($1, $2, [new yy.StrLiteral(\"'key'\")], [new yy.StrLiteral(\"'val'\")]);"],
       ["collection_type primary , field_list", "$$ = new yy.StateDecl($1, $2, $4, []);"],
       ["collection_type primary , field_list => field_list", "$$ = new yy.StateDecl($1, $2, $4, $6);"]
     ],
@@ -146,7 +146,11 @@ var grammar = {
       ["[ primary_list maybe_primary ]", "$$ = $3 === undefined ? $2 : $2.concat([$3]);"]
     ],
     "bloom_block": [
-      ["BLOOM maybe_var_name DO \\n body END", "$$ = new yy.BloomBlock($2, $5);"]
+      ["BLOOM maybe_var_name DO \\n bloom_body END", "$$ = new yy.BloomBlock($2, $5);"]
+    ],
+    "bloom_body": [
+      ["", "$$ = [];"],
+      ["bloom_body bloom_stmt \\n", "$1.push($2);"]
     ],
     "bloom_stmt": [
       ["var_name bloom_op primary", "$$ = new yy.BloomStmt($1, $2, $3);"]
@@ -162,12 +166,12 @@ var grammar = {
       "if_stmt"
     ],
     "if_stmt": [
-      "IF expression \\n body else_stmt"
+      ["IF expression \\n body else_clause", "$$ = new yy.IfStmt($2, $4, $5);"]
     ],
-    "else_stmt": [
-      "END",
-      "ELSIF expression \\n body else_stmt",
-      "ELSE \\n body END"
+    "else_clause": [
+      ["END", "$$ = new yy.ElseClause(null);"],
+      ["ELSIF expression \\n body else_stmt", "$$ = new yy.ElseIfClause($2, $4, $5);"],
+      ["ELSE \\n body END", "$$ = new yy.ElseClause($3)"]
     ],
     "simple_stmt": [
       ["primary", "$$ = new yy.ExprStmt($1);"],
@@ -286,7 +290,7 @@ var grammar = {
     "sym_literal": [
       [
         ": ID",
-        "$$ = new yy.StrLiteral(\"'\"+$1+\"'\");"
+        "$$ = new yy.StrLiteral(\"'\"+$2+\"'\");"
       ]
     ],
     "parenth_form": [
