@@ -1,4 +1,35 @@
+var getClass = Object.prototype.toString;
+var isFunction = function(x) {
+  return getClass.call(x) === '[object Function]';
+};
+var isArray = function(x) {
+  return getClass.call(x) === '[object Array]';
+};
+
 var Base = function() {
+};
+
+Base.prototype.children = [];
+Base.prototype.traverseWhile = function(fn) {
+  var children, self = this;
+  if (fn(this)) {
+    if (isFunction(this.children)) {
+      children = this.children();
+    } else if (isArray(this.children)) {
+      children = this.children.map(function(childName) {
+        return self[childName];
+      });
+    }
+    children.forEach(function(child) {
+      if (isArray(child)) {
+        child.forEach(function(el) {
+          el.traverseWhile(fn);
+        });
+      } else {
+        child.traverseWhile(fn);
+      }
+    });
+  }
 };
 
 var Program = function(statements) {
@@ -27,9 +58,10 @@ var ClassBlock = function(name, statements) {
   this.type = 'ClassBlock';
   this.name = name;
   this.statements = statements;
+  this.stateInfo = null;
 };
 ClassBlock.prototype = new Base();
-ClassBlock.prototype.children = ['name', 'statements'];
+ClassBlock.prototype.children = ['statements'];
 ClassBlock.prototype.genJSCode = function() {
   var res =
     'var ' + this.name + ' = function() {\n' +
@@ -135,15 +167,15 @@ BloomBlock.prototype.genSQLCode = function() {
 };
 exports.BloomBlock = BloomBlock;
 
-var StateDecl = function(type, name, keys, vals) {
+var StateDecl = function(collectionType, name, keys, vals) {
   this.type = 'StateDecl';
   this.name = name;
-  this.type = type;
+  this.collectionType = collectionType;
   this.keys = keys;
   this.vals = vals;
 };
 StateDecl.prototype = new Base();
-StateDecl.prototype.children = ['name', 'type', 'keys', 'vals'];
+StateDecl.prototype.children = ['name', 'keys', 'vals'];
 StateDecl.prototype.genJSCode = function() {
   var res = 'this.addCollection(' + this.name.genJSCode() + ', ' + this.type +
     ', [';
@@ -190,12 +222,13 @@ var BloomStmt = function(destCollection, bloomOp, srcCollection) {
   this.bloomOp = bloomOp;
   this.destCollection = destCollection;
   this.srcCollection = srcCollection;
+  this.dependencyInfo = null;
   this.target = null;
   this.monotonicDeps = [];
   this.nonMonotonicDeps = [];
 };
 BloomStmt.prototype = new Base();
-BloomStmt.prototype.children = ['destCollection', 'bloomOp', 'srcCollection'];
+BloomStmt.prototype.children = ['destCollection', 'srcCollection'];
 BloomStmt.prototype.genJSCode = function() {
   var res = this.opPrefix + '.op(' + this.bloomOp + ',' +
     this.destCollection.genJSCode() + ',' + this.srcCollection.genJSCode()
@@ -301,7 +334,7 @@ var Binop = function(left, op, right) {
   this.right = right;
 };
 Binop.prototype = new Base();
-Binop.prototype.children = ['left', 'op', 'right'];
+Binop.prototype.children = ['left', 'right'];
 Binop.prototype.genJSCode = function() {
   return this.left.genJSCode() + ' ' + this.op + ' ' + this.right.genJSCode();
 };
@@ -324,18 +357,18 @@ var VarName = function(name) {
   this.name = name;
 };
 VarName.prototype = new Base();
-VarName.prototype.children = ['name'];
+VarName.prototype.children = [];
 VarName.prototype.genJSCode = function() {
   return this.name;
 };
 exports.VarName = VarName;
 
-var StrLiteral = function(value) {
+var StrLiteral = function(raw) {
   this.type = 'StrLiteral';
-  this.value = value;
+  this.raw = raw;
+  this.value = raw.slice(1, -1);
 };
 StrLiteral.prototype = new Base();
-StrLiteral.prototype.children = ['value'];
 StrLiteral.prototype.genJSCode = function() {
   return this.value;
 };
@@ -346,7 +379,7 @@ var NumLiteral = function(value) {
   this.value = value;
 };
 NumLiteral.prototype = new Base();
-NumLiteral.prototype.children = ['value'];
+NumLiteral.prototype.children = [];
 NumLiteral.prototype.genJSCode = function() {
   return this.value;
 };
@@ -376,7 +409,9 @@ var HashDisplay = function(kvPairs) {
   this.kvPairs = kvPairs;
 };
 HashDisplay.prototype = new Base();
-HashDisplay.prototype.children = ['kvPairs'];
+HashDisplay.prototype.children = function() {
+  return [].concat.apply([], this.kvPairs);
+};
 HashDisplay.prototype.genJSCode = function() {
   res = '{';
   this.kvPairs.forEach(function(kvPair) {
@@ -440,7 +475,7 @@ var NewExpr = function(name, args) {
   this.args = args;
 };
 NewExpr.prototype = new Base();
-NewExpr.prototype.children = ['name', 'args'];
+NewExpr.prototype.children = ['args'];
 NewExpr.prototype.genJSCode = function() {
   res = 'new ' + this.name + '(';
   this.args.forEach(function(arg) {

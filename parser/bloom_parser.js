@@ -138,11 +138,11 @@ var grammar = {
       ["collection_type primary , field_list => field_list", "$$ = new yy.StateDecl($1, $2, $4, $6);"]
     ],
     "collection_type": [
-      ["TABLE", "$$ = \"'table'\";"],
-      ["SCRATCH", "$$ = \"'scratch'\";"],
-      ["INTERFACE", "$$ = \"'interface'\";"],
-      ["LOOPBACK", "$$ = \"'loopback'\";"],
-      ["PERIODIC", "$$ = \"'periodic'\";"]
+      ["TABLE", "$$ = $1;"],
+      ["SCRATCH", "$$ = $1;"],
+      ["INTERFACE", "$$ = $1;"],
+      ["LOOPBACK", "$$ = $1;"],
+      ["PERIODIC", "$$ = $1;"]
     ],
     "field_list": [
       ["[ primary_list maybe_primary ]", "$$ = $3 === undefined ? $2 : $2.concat([$3]);"]
@@ -161,11 +161,11 @@ var grammar = {
       ["var_name bloom_op primary", "$$ = new yy.BloomStmt($1, $2, $3);"]
     ],
     "bloom_op": [
-      ["<=", "$$ = \"'<='\";"],
-      ["<~", "$$ = \"'<~'\";"],
-      ["<+-", "$$ = \"'<+-'\";"],
-      ["<+", "$$ = \"'<+'\";"],
-      ["<-", "$$ = \"'<-'\";"]
+      ["<=", "$$ = $1;"],
+      ["<~", "$$ = $1;"],
+      ["<+-", "$$ = $1;"],
+      ["<+", "$$ = $1;"],
+      ["<-", "$$ = $1;"]
     ],
     "compound_stmt": [
       "if_stmt"
