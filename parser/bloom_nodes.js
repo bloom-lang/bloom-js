@@ -14,6 +14,13 @@ Program.prototype.genJSCode = function() {
   });
   return res;
 };
+Program.prototype.genSQLCode = function() {
+  var res = '';
+  this.statements.forEach(function(statement) {
+    res += statement.genSQLCode();
+  });
+  return res;
+};
 exports.Program = Program;
 
 var ClassBlock = function(name, statements) {
@@ -41,12 +48,19 @@ ClassBlock.prototype.genJSCode = function() {
   });
   return res;
 };
+ClassBlock.prototype.genSQLCode = function() {
+  var res = '';
+  this.statements.forEach(function(statement) {
+    res += statement.genSQLCode();
+  });
+  return res;
+};
 exports.ClassBlock = ClassBlock;
 
 var StateBlock = function(stateDecls) {
   this.type = 'StateBlock';
   this.stateDecls = stateDecls;
-}
+};
 StateBlock.prototype = new Base();
 StateBlock.prototype.children = ['stateDecls'];
 StateBlock.prototype.genJSCode = function() {
@@ -57,14 +71,48 @@ StateBlock.prototype.genJSCode = function() {
   res += '};\n';
   return res;
 };
+StateBlock.prototype.genSQLCode = function() {
+  var res = '';
+  this.stateDecls.forEach(function(stateDecl) {
+    res += stateDecl.genSQLCode();
+  });
+  return res;
+};
 exports.StateBlock = StateBlock;
+
+var BootstrapBlock = function(statements) {
+  this.type = 'BootstrapBlock';
+  this.className = '';
+  this.statements = statements;
+};
+BootstrapBlock.prototype = new Base();
+BootstrapBlock.prototype.children = ['statements'];
+BootstrapBlock.prototype.genJSCode = function() {
+  var res = this.className + '.prototype.initializeOps = function() {\n';
+  this.statements.forEach(function(statement) {
+    res += statement.genJSCode();
+  });
+  res += '};\n';
+  return res;
+};
+BootstrapBlock.prototype.genSQLCode = function() {
+  var res = 'CREATE OR REPLACE FUNCTION iter (\n) RETURNS BOOL AS $$\n' +
+    'DECLARE\nall_same BOOL := TRUE;\nrow_count INT;\nnew_row_count INT;\n' +
+    'BEGIN\n';
+  this.statements.forEach(function(statement) {
+    res += statement.genSQLCode();
+  });
+  res += 'END;\n$$ LANGUAGE plpgsql;\n';
+  return res;
+};
+exports.BootstrapBlock = BootstrapBlock;
 
 var BloomBlock = function(name, statements) {
   this.type = 'BloomBlock';
   this.className = '';
   this.name = name === undefined ? '' : name;
   this.statements = statements;
-}
+};
 BloomBlock.prototype = new Base();
 BloomBlock.prototype.children = ['name', 'statements'];
 BloomBlock.prototype.genJSCode = function() {
@@ -73,6 +121,16 @@ BloomBlock.prototype.genJSCode = function() {
     res += statement.genJSCode();
   });
   res += '};\n';
+  return res;
+};
+BloomBlock.prototype.genSQLCode = function() {
+  var res = 'CREATE OR REPLACE FUNCTION iter (\n) RETURNS BOOL AS $$\n' +
+    'DECLARE\nall_same BOOL := TRUE;\nrow_count INT;\nnew_row_count INT;\n' +
+    'BEGIN\n';
+  this.statements.forEach(function(statement) {
+    res += statement.genSQLCode();
+  });
+  res += 'END;\n$$ LANGUAGE plpgsql;\n';
   return res;
 };
 exports.BloomBlock = BloomBlock;
@@ -103,6 +161,25 @@ StateDecl.prototype.genJSCode = function() {
     res = res.slice(0, -2);
   }
   res += ']);\n';
+  return res;
+};
+StateDecl.prototype.genSQLCode = function() {
+  var res = 'DROP TABLE IF EXISTS ' + this.name.genJSCode() + ';\n';
+  res += 'CREATE TABLE ' + this.name.genJSCode() + ' (\n';
+  this.keys.forEach(function(key) {
+    res += key.genJSCode() + ',\n';
+  });
+  this.vals.forEach(function(val) {
+    res += val.genJSCode() + ',\n';
+  });
+  res += 'PRIMARY KEY (';
+  this.keys.forEach(function(key) {
+    res += key.genJSCode() + ', ';
+  });
+  if (this.keys.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ')\n);\n';
   return res;
 };
 exports.StateDecl = StateDecl;
@@ -139,6 +216,10 @@ BloomStmt.prototype.genJSCode = function() {
   res += '] });\n';
   return res;
 };
+BloomStmt.prototype.genSQLCode = function() {
+  var res = 'CREATE TABLE tmp (TODO) AS\n';
+  return res;
+};
 exports.BloomStmt = BloomStmt;
 
 var ExprStmt = function(expr) {
@@ -162,6 +243,9 @@ AssignmentStmt.prototype.children = ['target', 'value'];
 AssignmentStmt.prototype.genJSCode = function() {
   return 'var ' + this.target.genJSCode() + ' = ' + this.value.genJSCode() +
     ';\n';
+};
+AssignmentStmt.prototype.genSQLCode = function() {
+  return '';
 };
 exports.AssignmentStmt = AssignmentStmt;
 
