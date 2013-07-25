@@ -152,12 +152,12 @@ exports.BootstrapBlock = BootstrapBlock;
 
 var BloomBlock = function(name, statements) {
   this.className = '';
-  this.name = name === undefined ? '' : name;
+  this.name = name === undefined ? '' : name.value;
   this.statements = statements;
 };
 BloomBlock.prototype = new Base();
 BloomBlock.prototype.type = 'BloomBlock';
-BloomBlock.prototype.children = ['name', 'statements'];
+BloomBlock.prototype.children = ['statements'];
 BloomBlock.prototype.genJSCode = function() {
   var res = this.className + '.prototype.initializeOps = function() {\n';
   this.statements.forEach(function(statement) {
@@ -289,6 +289,23 @@ AssignmentStmt.prototype.genSQLCode = function() {
   return '';
 };
 exports.AssignmentStmt = AssignmentStmt;
+
+var AssignmentStmtCompound = function(target, value, op) {
+  this.target = target;
+  this.value = value;
+  this.op = op;
+};
+AssignmentStmtCompound.prototype = new Base();
+AssignmentStmtCompound.prototype.type = 'AssignmentStmtCompound';
+AssignmentStmtCompound.prototype.children = ['target', 'value'];
+AssignmentStmtCompound.prototype.genJSCode = function() {
+  return this.target.genJSCode() + ' ' + this.op + ' ' +
+    this.value.genJSCode() + ';\n';
+};
+AssignmentStmtCompound.prototype.genSQLCode = function() {
+  return '';
+};
+exports.AssignmentStmtCompound = AssignmentStmtCompound;
 
 var AssignmentStmtNoDecl = function(target, value) {
   this.target = target;

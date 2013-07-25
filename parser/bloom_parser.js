@@ -44,11 +44,19 @@ var grammar = {
       ["!=", "return '!='"],
       ["<=", "return '<='"],
       [">=", "return '>='"],
-      ["&&", "return '&&'"],
-      ["\\|\\|", "return '||'"],
+      ["&&=", "return '&&='"],
+      ["\\|\\|=", "return '||='"],
+      ["\\*\\*=", "return '**='"],
+      ["%=", "return '%='"],
+      ["\\*=", "return '*='"],
+      ["\\/=", "return '/='"],
+      ["\\+=", "return '+='"],
+      ["-=", "return '-='"],
       ["<", "return '<'"],
       [">", "return '>'"],
       ["=", "return '='"],
+      ["&&", "return '&&'"],
+      ["\\|\\|", "return '||'"],
       ["\\*\\*", "return '**'"],
       ["%", "return '%'"],
       ["\\*", "return '*'"],
@@ -185,10 +193,15 @@ var grammar = {
       "puts_stmt"
     ],
     "assignment_stmt": [
-      [
-        "assignable = expression",
-        "$$ = new yy.AssignmentStmt($1, $3);"
-      ]
+      ["assignable = expression", "$$ = new yy.AssignmentStmt($1, $3);"],
+      ["assignable &&= expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"],
+      ["assignable ||= expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"],
+      ["assignable **= expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"],
+      ["assignable %= expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"],
+      ["assignable *= expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"],
+      ["assignable /= expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"],
+      ["assignable += expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"],
+      ["assignable -= expression", "$$ = new yy.AssignmentStmtCompound($1, $3, $2);"]
     ],
     "puts_stmt": [
       [
