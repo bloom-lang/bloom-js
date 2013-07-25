@@ -9,9 +9,10 @@ var isArray = function(x) {
 var Base = function() {};
 Base.prototype.kind = 'Base';
 Base.prototype.children = [];
-Base.prototype.traverseWhile = function(fn) {
-  var children, self = this;
-  if (fn(this)) {
+Base.prototype.traverse = function(fn, opt) {
+  var nextOpt, children, self = this;
+  nextOpt = fn(this, opt)
+  if (nextOpt) {
     if (isFunction(this.children)) {
       children = this.children();
     } else if (isArray(this.children)) {
@@ -22,10 +23,10 @@ Base.prototype.traverseWhile = function(fn) {
     children.forEach(function(child) {
       if (isArray(child)) {
         child.forEach(function(el) {
-          el.traverseWhile(fn);
+          el.traverse(fn, nextOpt);
         });
       } else {
-        child.traverseWhile(fn);
+        child.traverse(fn, nextOpt);
       }
     });
   }
@@ -120,6 +121,7 @@ exports.StateBlock = StateBlock;
 var BootstrapBlock = function(statements) {
   this.className = '';
   this.statements = statements;
+  this.opStrata = null;
 };
 BootstrapBlock.prototype = new Base();
 BootstrapBlock.prototype.type = 'BootstrapBlock';
@@ -148,6 +150,7 @@ var BloomBlock = function(name, statements) {
   this.className = '';
   this.name = name === undefined ? '' : name.value;
   this.statements = statements;
+  this.opStrata = null;
 };
 BloomBlock.prototype = new Base();
 BloomBlock.prototype.type = 'BloomBlock';
