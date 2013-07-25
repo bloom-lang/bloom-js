@@ -37,12 +37,6 @@ Base.prototype.genSQLCode = function() {
   return '(' + this.type + ' UNIMPLEMENTED)';
 };
 
-var QueryExpr = function() {};
-QueryExpr.prototype = new Base();
-QueryExpr.prototype.kind = 'QueryExpr';
-QueryExpr.prototype.monotonic = true;
-QueryExpr.prototype.collections = function() { return []; };
-
 var Program = function(statements) {
   this.statements = statements;
 };
@@ -607,6 +601,12 @@ ElseClause.prototype.genJSCode = function() {
 };
 exports.ElseClause = ElseClause;
 
+var QueryExpr = function() {};
+QueryExpr.prototype = new Base();
+QueryExpr.prototype.kind = 'QueryExpr';
+QueryExpr.prototype.monotonic = true;
+QueryExpr.prototype.collections = function() { return []; };
+
 var ValuesExpr = function(values) {
   this.values = values;
 };
@@ -624,9 +624,7 @@ var SelectExpr = function(collectionName, selectFn) {
 };
 SelectExpr.prototype = new QueryExpr();
 SelectExpr.prototype.type = 'SelectExpr';
-SelectExpr.prototype.collections = function() {
-  return [this.collectionName];
-};
+SelectExpr.prototype.collections = function() { return [this.collectionName]; };
 SelectExpr.prototype.children = ['selectFn'];
 SelectExpr.prototype.genJSCode = function() {
   return this.collectionName + '.select(' + this.selectFn.genJSCode() + ')';
@@ -653,17 +651,46 @@ JoinExpr.prototype.genJSCode = function() {
 }
 exports.JoinExpr = JoinExpr;
 
+var AggExpr = function() {};
+AggExpr.prototype = new QueryExpr();
+AggExpr.prototype.monotonic = false;
+AggExpr.prototype.collections = function() { return [this.collectionName]; };
+
+var ReduceExpr = function(collectionName, initVal, reduceFn) {
+  this.collectionName = collectionName;
+  this.initVal = initVal;
+  this.reduceFn = reduceFn;
+};
+ReduceExpr.prototype = new AggExpr();
+ReduceExpr.prototype.type = 'ReduceExpr';
+ReduceExpr.prototype.children = ['initVal', 'reduceFn'];
+ReduceExpr.prototype.genJSCode = function() {
+  return this.collectionName + '.reduce(' + this.initVal.genJSCode() + ', ' +
+    this.reduceFn.genJSCode() + ')';
+};
+exports.ReduceExpr = ReduceExpr;
+
+var GroupExpr = function(collectionName, groupKeys, aggCall) {
+  this.collectionName = collectionName;
+  this.groupKeys = groupKeys;
+  this.aggCall = aggCall;
+};
+GroupExpr.prototype = new AggExpr();
+GroupExpr.prototype.type = 'GroupExpr';
+GroupExpr.prototype.children = ['groupKeys', 'aggCall'];
+GroupExpr.prototype.genJSCode = function() {
+  return this.collectionName + '.group(' + this.groupKeys.genJSCode() + ', ' +
+    this.aggCall.genJSCode() + ')';
+};
+exports.GroupExpr = GroupExpr;
+
 var ArgminExpr = function(collectionName, groupKeys, minKey) {
   this.collectionName = collectionName;
   this.groupKeys = groupKeys;
   this.minKey = minKey;
 };
-ArgminExpr.prototype = new QueryExpr();
+ArgminExpr.prototype = new AggExpr();
 ArgminExpr.prototype.type = 'ArgminExpr';
-ArgminExpr.prototype.monotonic = false;
-ArgminExpr.prototype.collections = function() {
-  return [this.collectionName];
-};
 ArgminExpr.prototype.children = ['groupKeys', 'minKey'];
 ArgminExpr.prototype.genJSCode = function() {
   return this.collectionName + '.argmin(' + this.groupKeys.genJSCode() + ', ' +

@@ -3,12 +3,15 @@ var nodes = require('./bloom_nodes');
 var rewriteQueryExpr = function(qe) {
   var primary, fnName, leftCollectionName, rightCollectionName, leftKeysArr,
     rightKeysArr, res = qe;
-  if (qe.type === 'ArrDisplay') {
+  if (qe.type === 'AttributeRef' && qe.attribute.name === 'inspected') {
+    res = new nodes.SelectExpr(qe.obj.name, new nodes.FuncExpr([], []));
+  } else if (qe.type === 'ArrDisplay') {
     res = new nodes.ValuesExpr(qe);
   } else if (qe.type === 'PrimaryBlock') {
     if (qe.primary.type === 'VarName') {
       res = new nodes.SelectExpr(qe.primary.name, qe.funcExpr);
-    } else if (qe.primary.type === 'Call') {
+    } else if (qe.primary.type === 'Call' &&
+               qe.primary.func.type === 'AttributeRef') {
       fnName = qe.primary.func.attribute.name;
       if (fnName === 'pairs') {
         leftCollectionName = qe.primary.func.obj.left.name;
@@ -23,11 +26,16 @@ var rewriteQueryExpr = function(qe) {
                                  new nodes.ArrDisplay(leftKeysArr),
                                  new nodes.ArrDisplay(rightKeysArr),
                                  qe.funcExpr);
+      } else if (fnName === 'reduce') {
+        res = new nodes.ReduceExpr(qe.primary.func.obj.name, qe.primary.args[0],
+                                   qe.funcExpr);
       }
     }
   } else if (qe.type === 'Call' && qe.func.type === 'AttributeRef') {
     fnName = qe.func.attribute.name;
-    if (fnName === 'argmin') {
+    if (fnName === 'group') {
+      res = new nodes.GroupExpr(qe.func.obj.name, qe.args[0], qe.args[1]);
+    } else if (fnName === 'argmin') {
       res = new nodes.ArgminExpr(qe.func.obj.name, qe.args[0], qe.args[1]);
     }
   }
@@ -76,9 +84,7 @@ exports.rewrite = function(ast) {
       node.stateInfo = getStateInfo(node);
     } else if (node.type === 'BloomStmt') {
       node.queryExpr = rewriteQueryExpr(node.queryExpr);
-      if (node.bloomOp === '<=') {
-        node.dependencyInfo = getDependencyInfo(node);
-      }
+      node.dependencyInfo = getDependencyInfo(node);
       return false;
     }
     return true;
