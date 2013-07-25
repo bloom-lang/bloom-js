@@ -156,7 +156,7 @@ var grammar = {
       ["[ primary_list maybe_primary ]", "$$ = $3 === undefined ? $2 : $2.concat([$3]);"]
     ],
     "bootstrap_block": [
-      ["BOOTSTRAP DO \\n body END", "$$ = new yy.BootstrapBlock($4);"]
+      ["BOOTSTRAP DO \\n body END", "$$ = new yy.BloomBlock('bootstrap', $4);"]
     ],
     "bloom_block": [
       ["BLOOM maybe_symbol DO \\n bloom_body END", "$$ = new yy.BloomBlock($2, $5);"]

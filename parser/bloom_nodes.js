@@ -87,9 +87,9 @@ ClassBlock.prototype.genJSCode = function() {
   return res;
 };
 ClassBlock.prototype.genSQLCode = function() {
-  var res = '';
+  var res = '', self = this;
   this.statements.forEach(function(statement) {
-    res += statement.genSQLCode();
+    res += statement.genSQLCode(self.stateInfo);
   });
   return res;
 };
@@ -118,38 +118,11 @@ StateBlock.prototype.genSQLCode = function() {
 };
 exports.StateBlock = StateBlock;
 
-var BootstrapBlock = function(statements) {
-  this.className = '';
-  this.statements = statements;
-  this.opStrata = null;
-};
-BootstrapBlock.prototype = new Base();
-BootstrapBlock.prototype.type = 'BootstrapBlock';
-BootstrapBlock.prototype.children = ['statements'];
-BootstrapBlock.prototype.genJSCode = function() {
-  var res = this.className + '.prototype.initializeOps = function() {\n';
-  this.statements.forEach(function(statement) {
-    res += statement.genJSCode();
-  });
-  res += '};\n';
-  return res;
-};
-BootstrapBlock.prototype.genSQLCode = function() {
-  var res = 'CREATE OR REPLACE FUNCTION iter (\n) RETURNS BOOL AS $$\n' +
-    'DECLARE\nall_same BOOL := TRUE;\nrow_count INT;\nnew_row_count INT;\n' +
-    'BEGIN\n';
-  this.statements.forEach(function(statement) {
-    res += statement.genSQLCode();
-  });
-  res += 'END;\n$$ LANGUAGE plpgsql;\n';
-  return res;
-};
-exports.BootstrapBlock = BootstrapBlock;
-
 var BloomBlock = function(name, statements) {
   this.className = '';
   this.name = name === undefined ? '' : name.value;
   this.statements = statements;
+  this.bootstrap = name === 'bootstrap';
   this.opStrata = null;
 };
 BloomBlock.prototype = new Base();
@@ -163,12 +136,55 @@ BloomBlock.prototype.genJSCode = function() {
   res += '};\n';
   return res;
 };
-BloomBlock.prototype.genSQLCode = function() {
-  var res = 'CREATE OR REPLACE FUNCTION iter (\n) RETURNS BOOL AS $$\n' +
-    'DECLARE\nall_same BOOL := TRUE;\nrow_count INT;\nnew_row_count INT;\n' +
-    'BEGIN\n';
-  this.statements.forEach(function(statement) {
-    res += statement.genSQLCode();
+BloomBlock.prototype.genSQLCode = function(stateInfo) {
+  var allTargets = {}, collection, res;
+  this.opStrata.forEach(function(stratum) {
+    for (collection in stratum.nonMonotonicTargets) {
+      if (stratum.nonMonotonicTargets.hasOwnProperty(collection)) {
+        allTargets[collection] = true;
+      }
+    }
+    for (collection in stratum.monotonicTargets) {
+      if (stratum.monotonicTargets.hasOwnProperty(collection)) {
+        allTargets[collection] = true;
+      }
+    }
+  });
+  res = 'CREATE OR REPLACE FUNCTION tick (\n) RETURNS VOID AS $$\nDECLARE\n' +
+    'all_same BOOL;\nrow_count INT;\nnew_row_count INT;\nBEGIN\n';
+  for (collection in allTargets) {
+    if (allTargets.hasOwnProperty(collection)) {
+      res += 'DROP TABLE IF EXISTS new_' + collection + ';\n';
+      res += 'CREATE TABLE new_' + collection + ' AS SELECT * FROM ' +
+        collection + ';\n';
+    }
+  }
+  this.opStrata.forEach(function(stratum) {
+    stratum.nonMonotonicOps.forEach(function(bloomStmt) {
+      res += bloomStmt.genSQLCode(stateInfo);
+    });
+    for (collection in stratum.nonMonotonicTargets) {
+      if (stratum.nonMonotonicTargets.hasOwnProperty(collection)) {
+        res += 'DROP TABLE ' + collection + ';\n';
+        res += 'ALTER TABLE new_' + collection + ' RENAME TO ' + collection +
+          ';\n';
+      }
+    }
+    res += 'all_same := FALSE;\nWHILE NOT all_same LOOP\n';
+    stratum.monotonicOps.forEach(function(bloomStmt) {
+      res += bloomStmt.genSQLCode(stateInfo);
+    });
+    res += 'all_same := TRUE;\n';
+    for (target in stratum.monotonicTargets) {
+      if (stratum.monotonicTargets.hasOwnProperty(target)) {
+        res += 'SELECT INTO row_count COUNT(*) FROM ' + target + ';\n';
+        res += 'SELECT INTO new_row_count COUNT(*) FROM new_' + target + ';\n';
+        res += 'all_same := all_same AND row_count = new_row_count;\n';
+        res += 'DROP TABLE ' + target + ';\n';
+        res += 'ALTER TABLE new_' + target + ' RENAME TO ' + target + ';\n';
+      }
+    }
+    res += 'END LOOP;\n';
   });
   res += 'END;\n$$ LANGUAGE plpgsql;\n';
   return res;
@@ -255,7 +271,9 @@ BloomStmt.prototype.genJSCode = function() {
   return res;
 };
 BloomStmt.prototype.genSQLCode = function() {
-  var res = 'CREATE TABLE tmp (TODO) AS\n';
+  var res = 'DROP TABLE IF EXISTS tmp;\nCREATE TABLE tmp (TODO) AS\n';
+  res += JSON.stringify(this.dependencyInfo);
+  res += '\n';
   return res;
 };
 exports.BloomStmt = BloomStmt;

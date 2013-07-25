@@ -25,7 +25,7 @@ var getStateInfo = function(classBlock) {
 var consolidateBloomBlocks = function(classBlock) {
   var bloomStmts = [], res = [];
   classBlock.statements.forEach(function(statement) {
-    if (statement.type === 'BloomBlock') {
+    if (statement.type === 'BloomBlock' && !statement.bootstrap) {
       bloomStmts = bloomStmts.concat(statement.statements);
     } else {
       res.push(statement);
@@ -229,18 +229,18 @@ var stratifyOps = function(bloomBlock, stateInfo) {
         spec.nonMonotonicDeps.length > 0;
       if (opStrata[ccStratum] === undefined) {
         opStrata[ccStratum] = {
-          targets: {},
+          monotonicTargets: {},
+          nonMonotonicTargets: {},
           monotonicOps: [],
           nonMonotonicOps: []
         };
       }
-      connectedComponents[num].members.forEach(function(collectionName) {
-        opStrata[ccStratum].targets[collectionName] = true;
-      });
       if (fullyNonMonotonic) {
         opStrata[ccStratum].nonMonotonicOps.push(bloomStmt);
+        opStrata[ccStratum].nonMonotonicTargets[spec.target] = true;
       } else {
         opStrata[ccStratum].monotonicOps.push(bloomStmt);
+        opStrata[ccStratum].monotonicTargets[spec.target] = true;
       }
     }
   });
@@ -262,7 +262,7 @@ exports.rewrite = function(ast) {
   ast.traverse(function(node, opt) {
     if (node.type === 'ClassBlock') {
       return node.stateInfo;
-    } else if (node.type === 'BootstrapBlock' || node.type === 'BloomBlock') {
+    } else if (node.type === 'BloomBlock') {
       node.opStrata = stratifyOps(node, opt);
       return false;
     }
