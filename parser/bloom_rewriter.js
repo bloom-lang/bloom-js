@@ -13,8 +13,8 @@ var getStateInfo = function(classBlock) {
         });
         res[stateDecl.name.value] = {
           collectionType: stateDecl.collectionType,
-          columns: keys.concat(vals),
-          numKeys: keys.length
+          keys: keys,
+          vals: vals
         };
       });
     }

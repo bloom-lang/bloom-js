@@ -137,7 +137,7 @@ BloomBlock.prototype.genJSCode = function() {
   return res;
 };
 BloomBlock.prototype.genSQLCode = function(stateInfo) {
-  var allTargets = {}, collection, res;
+  var allTargets = {}, collection, res, fnName;
   this.opStrata.forEach(function(stratum) {
     for (collection in stratum.nonMonotonicTargets) {
       if (stratum.nonMonotonicTargets.hasOwnProperty(collection)) {
@@ -150,8 +150,9 @@ BloomBlock.prototype.genSQLCode = function(stateInfo) {
       }
     }
   });
-  res = 'CREATE OR REPLACE FUNCTION tick (\n) RETURNS VOID AS $$\nDECLARE\n' +
-    'all_same BOOL;\nrow_count INT;\nnew_row_count INT;\nBEGIN\n';
+  fnName = this.bootstrap ? 'bootstrap' : 'bloom';
+  res = 'CREATE OR REPLACE FUNCTION ' + fnName + ' (\n) RETURNS VOID AS $$\n' +
+    'DECLARE\nall_same BOOL;\nrow_count INT;\nnew_row_count INT;\nBEGIN\n';
   for (collection in allTargets) {
     if (allTargets.hasOwnProperty(collection)) {
       res += 'DROP TABLE IF EXISTS new_' + collection + ';\n';
@@ -170,21 +171,23 @@ BloomBlock.prototype.genSQLCode = function(stateInfo) {
           ';\n';
       }
     }
-    res += 'all_same := FALSE;\nWHILE NOT all_same LOOP\n';
-    stratum.monotonicOps.forEach(function(bloomStmt) {
-      res += bloomStmt.genSQLCode(stateInfo);
-    });
-    res += 'all_same := TRUE;\n';
-    for (target in stratum.monotonicTargets) {
-      if (stratum.monotonicTargets.hasOwnProperty(target)) {
-        res += 'SELECT INTO row_count COUNT(*) FROM ' + target + ';\n';
-        res += 'SELECT INTO new_row_count COUNT(*) FROM new_' + target + ';\n';
-        res += 'all_same := all_same AND row_count = new_row_count;\n';
-        res += 'DROP TABLE ' + target + ';\n';
-        res += 'ALTER TABLE new_' + target + ' RENAME TO ' + target + ';\n';
+    if (stratum.monotonicOps.length > 0) {
+      res += 'all_same := FALSE;\nWHILE NOT all_same LOOP\n';
+      stratum.monotonicOps.forEach(function(bloomStmt) {
+        res += bloomStmt.genSQLCode(stateInfo);
+      });
+      res += 'all_same := TRUE;\n';
+      for (target in stratum.monotonicTargets) {
+        if (stratum.monotonicTargets.hasOwnProperty(target)) {
+          res += 'SELECT INTO row_count COUNT(*) FROM ' + target + ';\n';
+          res += 'SELECT INTO new_row_count COUNT(*) FROM new_' + target + ';\n';
+          res += 'all_same := all_same AND row_count = new_row_count;\n';
+          res += 'DROP TABLE ' + target + ';\n';
+          res += 'ALTER TABLE new_' + target + ' RENAME TO ' + target + ';\n';
+        }
       }
+      res += 'END LOOP;\n';
     }
-    res += 'END LOOP;\n';
   });
   res += 'END;\n$$ LANGUAGE plpgsql;\n';
   return res;
@@ -270,10 +273,28 @@ BloomStmt.prototype.genJSCode = function() {
   res += '] });\n';
   return res;
 };
-BloomStmt.prototype.genSQLCode = function() {
-  var res = 'DROP TABLE IF EXISTS tmp;\nCREATE TABLE tmp (TODO) AS\n';
-  res += JSON.stringify(this.dependencyInfo);
-  res += '\n';
+BloomStmt.prototype.genSQLCode = function(stateInfo) {
+  var res, target, targetKeys, targetCols, targetKeyStr = '';
+  target = this.targetCollection.genSQLCode();
+  targetKeys = stateInfo[target].keys;
+  targetCols = targetKeys.concat(stateInfo[target].vals);
+  targetKeys.forEach(function(key) {
+    targetKeyStr += key + ', ';
+  });
+  if (targetKeys.length > 0) {
+    targetKeyStr = targetKeyStr.slice(0, -2);
+  }
+  res = 'DROP TABLE IF EXISTS tmp;\nCREATE TABLE tmp (';
+  targetCols.forEach(function(col) {
+    res += col + ', ';
+  });
+  if (targetCols.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ') AS\n' + this.queryExpr.genSQLCode() + ';\nINSERT INTO new_' +
+    target + '\nSELECT DISTINCT ON (' + targetKeyStr + ') * from tmp\nWHERE (' +
+    targetKeyStr + ') NOT IN (SELECT ' + targetKeyStr + ' FROM new_' + target +
+    ');\n';
   return res;
 };
 exports.BloomStmt = BloomStmt;
@@ -399,6 +420,9 @@ VarName.prototype = new Base();
 VarName.prototype.type = 'VarName';
 VarName.prototype.children = [];
 VarName.prototype.genJSCode = function() {
+  return this.name;
+};
+VarName.prototype.genSQLCode = function() {
   return this.name;
 };
 exports.VarName = VarName;

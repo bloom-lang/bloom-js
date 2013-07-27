@@ -47,18 +47,17 @@ BEGIN
     ('c', 'd', 1),
     ('d', 'e', 1);
   INSERT INTO new_links
-  SELECT * FROM tmp
-  WHERE (tmp.src, tmp.dest, tmp.cost) NOT IN
-    (SELECT * FROM new_links);
+  SELECT DISTINCT ON (src, dest, cost) * FROM tmp
+  WHERE (src, dest, cost) NOT IN
+    (SELECT src, dest, cost FROM new_links);
   DROP TABLE tmp;
 
   CREATE TABLE tmp (src, dest, nxt, cost) AS
-  SELECT src, dest, dest, cost
-  FROM links;
+  SELECT src, dest, dest, cost FROM links;
   INSERT INTO new_paths
-  SELECT * FROM tmp
-  WHERE (tmp.src, tmp.dest, tmp.nxt, tmp.cost) NOT IN
-    (SELECT * FROM new_paths);
+  SELECT DISTINCT ON (src, dest, nxt, cost) * FROM tmp
+  WHERE (src, dest, nxt, cost) NOT IN
+    (SELECT src, dest, nxt, cost FROM new_paths);
   DROP TABLE tmp;
 
   CREATE TABLE tmp (src, dest, nxt, cost) AS
@@ -66,8 +65,8 @@ BEGIN
   FROM links INNER JOIN paths
   ON links.dest = paths.src;
   INSERT INTO new_paths
-  SELECT * FROM tmp
-  WHERE (tmp.src, tmp.dest, tmp.nxt, tmp.cost) NOT IN
+  SELECT DISTINCT ON (src, dest, nxt, cost) * FROM tmp
+  WHERE (src, dest, nxt, cost) NOT IN
     (SELECT * FROM new_paths);
   DROP TABLE tmp;
 
