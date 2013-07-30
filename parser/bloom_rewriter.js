@@ -41,7 +41,7 @@ var rewriteQueryExpr = function(qe) {
   if (qe.type === 'AttributeRef' && qe.attribute.name === 'inspected') {
     res = new nodes.SelectExpr(qe.obj.name, new nodes.FuncExpr([], []));
   } else if (qe.type === 'ArrDisplay') {
-    res = new nodes.ValuesExpr(qe);
+    res = new nodes.ValuesExpr(qe.arr);
   } else if (qe.type === 'PrimaryBlock') {
     if (qe.primary.type === 'VarName') {
       res = new nodes.SelectExpr(qe.primary.name, qe.funcExpr);

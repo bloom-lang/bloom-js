@@ -1,6 +1,7 @@
-DROP TABLE IF EXISTS links;
-DROP TABLE IF EXISTS paths;
-DROP TABLE IF EXISTS shortest;
+DROP TABLE IF EXISTS links CASCADE;
+DROP TABLE IF EXISTS paths CASCADE;
+DROP TABLE IF EXISTS shortest CASCADE;
+DROP TYPE IF EXISTS paths_type CASCADE;
 
 CREATE TABLE links (
   src VARCHAR(255),
@@ -31,6 +32,7 @@ DECLARE
   all_same BOOL := TRUE;
   row_count INT;
   new_row_count INT;
+  r RECORD;
 BEGIN
   DROP TABLE IF EXISTS tmp;
   DROP TABLE IF EXISTS new_links;
@@ -39,7 +41,8 @@ BEGIN
   CREATE TABLE new_links AS SELECT * FROM links;
   CREATE TABLE new_paths AS SELECT * FROM paths;
 
-  CREATE TABLE tmp (src, dest, cost) AS
+  CREATE TABLE tmp AS SELECT * from links WHERE 1=0;
+  INSERT INTO tmp
   VALUES
     ('a', 'b', 1),
     ('a', 'b', 4),
@@ -52,18 +55,20 @@ BEGIN
     (SELECT src, dest, cost FROM new_links);
   DROP TABLE tmp;
 
-  CREATE TABLE tmp (src, dest, nxt, cost) AS
-  SELECT src, dest, dest, cost FROM links;
+  CREATE TABLE tmp AS SELECT * FROM paths WHERE 1=0;
+  FOR r IN (SELECT * FROM links) LOOP
+    INSERT INTO tmp VALUES (r.src, r.dest, r.dest, r.cost);
+  END LOOP;
   INSERT INTO new_paths
   SELECT DISTINCT ON (src, dest, nxt, cost) * FROM tmp
   WHERE (src, dest, nxt, cost) NOT IN
     (SELECT src, dest, nxt, cost FROM new_paths);
   DROP TABLE tmp;
 
-  CREATE TABLE tmp (src, dest, nxt, cost) AS
-  SELECT links.src, paths.dest, links.dest, links.cost + paths.cost
-  FROM links INNER JOIN paths
-  ON links.dest = paths.src;
+  CREATE TABLE tmp AS SELECT * FROM paths WHERE 1=0;
+  FOR r IN (SELECT links.src as links_src,links.dest as links_dest, links.cost as links_cost, paths.src as paths_src, paths.dest as paths_dest, paths.nxt as paths_nxt, paths.cost as paths_cost FROM links INNER JOIN paths ON links.dest = paths.src) LOOP
+    INSERT INTO tmp VALUES (r.links_src, r.paths_dest, r.links_dest, r.links_cost + r.paths_cost);
+  END LOOP;
   INSERT INTO new_paths
   SELECT DISTINCT ON (src, dest, nxt, cost) * FROM tmp
   WHERE (src, dest, nxt, cost) NOT IN

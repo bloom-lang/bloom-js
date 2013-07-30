@@ -54,7 +54,9 @@ Program.prototype.genJSCode = function() {
 Program.prototype.genSQLCode = function() {
   var res = '';
   this.statements.forEach(function(statement) {
-    res += statement.genSQLCode();
+    if (statement.type === 'ClassBlock') {
+      res += statement.genSQLCode();
+    }
   });
   return res;
 };
@@ -152,7 +154,8 @@ BloomBlock.prototype.genSQLCode = function(stateInfo) {
   });
   fnName = this.bootstrap ? 'bootstrap' : 'bloom';
   res = 'CREATE OR REPLACE FUNCTION ' + fnName + ' (\n) RETURNS VOID AS $$\n' +
-    'DECLARE\nall_same BOOL;\nrow_count INT;\nnew_row_count INT;\nBEGIN\n';
+    'DECLARE\nall_same BOOL;\nrow_count INT;\nnew_row_count INT;\nr RECORD;\n' +
+    'BEGIN\n';
   for (collection in allTargets) {
     if (allTargets.hasOwnProperty(collection)) {
       res += 'DROP TABLE IF EXISTS new_' + collection + ';\n';
@@ -274,27 +277,20 @@ BloomStmt.prototype.genJSCode = function() {
   return res;
 };
 BloomStmt.prototype.genSQLCode = function(stateInfo) {
-  var res, target, targetKeys, targetCols, targetKeyStr = '';
+  var res, target, targetKeys, targetKeyStr = '';
   target = this.targetCollection.genSQLCode();
   targetKeys = stateInfo[target].keys;
-  targetCols = targetKeys.concat(stateInfo[target].vals);
   targetKeys.forEach(function(key) {
     targetKeyStr += key + ', ';
   });
   if (targetKeys.length > 0) {
     targetKeyStr = targetKeyStr.slice(0, -2);
   }
-  res = 'DROP TABLE IF EXISTS tmp;\nCREATE TABLE tmp (';
-  targetCols.forEach(function(col) {
-    res += col + ', ';
-  });
-  if (targetCols.length > 0) {
-    res = res.slice(0, -2);
-  }
-  res += ') AS\n' + this.queryExpr.genSQLCode() + ';\nINSERT INTO new_' +
-    target + '\nSELECT DISTINCT ON (' + targetKeyStr + ') * from tmp\nWHERE (' +
-    targetKeyStr + ') NOT IN (SELECT ' + targetKeyStr + ' FROM new_' + target +
-    ');\n';
+  res = 'DROP TABLE IF EXISTS tmp;\nCREATE TABLE tmp AS SELECT * FROM ' +
+    target + ' WHERE 1=0;\n' + this.queryExpr.genSQLCode(stateInfo) +
+    'INSERT INTO new_' + target + '\nSELECT DISTINCT ON (' + targetKeyStr +
+    ') * from tmp\nWHERE (' + targetKeyStr + ') NOT IN (SELECT ' +
+    targetKeyStr + ' FROM new_' + target + ');\n';
   return res;
 };
 exports.BloomStmt = BloomStmt;
@@ -307,6 +303,9 @@ ExprStmt.prototype.type = 'ExprStmt';
 ExprStmt.prototype.children = ['expr'];
 ExprStmt.prototype.genJSCode = function() {
   return this.expr.genJSCode() + ';\n';
+};
+ExprStmt.prototype.genSQLCode = function() {
+  return this.expr.genSQLCode() + ';\n';
 };
 exports.ExprStmt = ExprStmt;
 
@@ -399,6 +398,9 @@ Binop.prototype.children = ['left', 'right'];
 Binop.prototype.genJSCode = function() {
   return this.left.genJSCode() + ' ' + this.op + ' ' + this.right.genJSCode();
 };
+Binop.prototype.genSQLCode = function() {
+  return this.left.genSQLCode() + ' ' + this.op + ' ' + this.right.genSQLCode();
+};
 exports.Binop = Binop;
 
 var Unop = function(op, value) {
@@ -436,6 +438,9 @@ StrLiteral.prototype.type = 'StrLiteral';
 StrLiteral.prototype.genJSCode = function() {
   return this.raw;
 };
+StrLiteral.prototype.genSQLCode = function() {
+  return this.raw;
+};
 exports.StrLiteral = StrLiteral;
 
 var NumLiteral = function(value) {
@@ -445,6 +450,9 @@ NumLiteral.prototype = new Base();
 NumLiteral.prototype.type = 'NumLiteral';
 NumLiteral.prototype.children = [];
 NumLiteral.prototype.genJSCode = function() {
+  return this.value;
+};
+NumLiteral.prototype.genSQLCode = function() {
   return this.value;
 };
 exports.NumLiteral = NumLiteral;
@@ -464,6 +472,17 @@ ArrDisplay.prototype.genJSCode = function() {
     res = res.slice(0, -2);
   }
   res += ']';
+  return res;
+};
+ArrDisplay.prototype.genSQLCode = function() {
+  res = '(';
+  this.arr.forEach(function(val) {
+    res += val.genSQLCode() + ', ';
+  });
+  if (this.arr.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ')';
   return res;
 };
 exports.ArrDisplay = ArrDisplay;
@@ -498,6 +517,9 @@ AttributeRef.prototype.type = 'AttributeRef';
 AttributeRef.prototype.children = ['obj', 'attribute'];
 AttributeRef.prototype.genJSCode = function() {
   return this.obj.genJSCode() + '.' + this.attribute.genJSCode();
+};
+AttributeRef.prototype.genSQLCode = function() {
+  return 'r.' + this.obj.genSQLCode() + '_' + this.attribute.genSQLCode();
 };
 exports.AttributeRef = AttributeRef;
 
@@ -590,6 +612,16 @@ FuncExpr.prototype.genJSCode = function() {
   res += '}';
   return res;
 };
+FuncExpr.prototype.genSQLCode = function() {
+  var i, res = '';
+  for (i = 0; i < this.statements.length; i++) {
+    if (i === this.statements.length - 1) {
+      res += 'INSERT INTO tmp ';
+    }
+    res += this.statements[i].genSQLCode();
+  }
+  return res;
+};
 exports.FuncExpr = FuncExpr;
 
 var IfStmt = function(cond, thenStmts, elseClause) {
@@ -661,6 +693,17 @@ ValuesExpr.prototype.children = ['values'];
 ValuesExpr.prototype.genJSCode = function() {
   return 'values(' + this.values.genJSCode() + ')';
 };
+ValuesExpr.prototype.genSQLCode = function() {
+  var res = 'INSERT INTO tmp VALUES\n';
+  this.values.forEach(function(value) {
+    res += value.genSQLCode() + ',\n';
+  });
+  if (this.values.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ';\n';
+  return res;
+};
 exports.ValuesExpr = ValuesExpr;
 
 var SelectExpr = function(collectionName, selectFn) {
@@ -673,6 +716,20 @@ SelectExpr.prototype.collections = function() { return [this.collectionName]; };
 SelectExpr.prototype.children = ['selectFn'];
 SelectExpr.prototype.genJSCode = function() {
   return this.collectionName + '.select(' + this.selectFn.genJSCode() + ')';
+};
+SelectExpr.prototype.genSQLCode = function(stateInfo) {
+  var collectionInfo = stateInfo[this.collectionName],
+    res = 'FOR r IN (SELECT ', self = this;
+  collectionInfo.keys.concat(collectionInfo.vals).forEach(function(columnName) {
+    res += self.collectionName + '.' + columnName + ' AS ' +
+      self.selectFn.args[0].name + '_' + columnName + ', ';
+  });
+  if (collectionInfo.keys.length > 0 || collectionInfo.vals.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ' FROM ' + this.collectionName + ') LOOP\n' +
+    this.selectFn.genSQLCode() + 'END LOOP;\n';
+  return res;
 };
 exports.SelectExpr = SelectExpr;
 
@@ -694,6 +751,26 @@ JoinExpr.prototype.genJSCode = function() {
     this.leftJoinKeys.genJSCode() + ', ' + this.rightJoinKeys.genJSCode() +
     ', ' + this.joinFn.genJSCode() + ')';
 }
+JoinExpr.prototype.genSQLCode = function(stateInfo) {
+  var leftColInfo = stateInfo[this.leftCollectionName],
+    rightColInfo = stateInfo[this.rightCollectionName],
+    res = 'FOR r IN (SELECT ', self = this;
+  leftColInfo.keys.concat(leftColInfo.vals).forEach(function(columnName) {
+    res += self.leftCollectionName + '.' + columnName + ' AS ' +
+      self.joinFn.args[0].name + '_' + columnName + ', ';
+  });
+  rightColInfo.keys.concat(rightColInfo.vals).forEach(function(columnName) {
+    res += self.rightCollectionName + '.' + columnName + ' AS ' +
+      self.joinFn.args[0].name + '_' + columnName + ', ';
+  });
+  if (rightColInfo.keys.length > 0 || rightColInfo.vals.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ' FROM ' + this.leftCollectionName + ' INNER JOIN ' +
+    this.rightCollectionName + ') LOOP\n' +
+    this.joinFn.genSQLCode() + 'END LOOP;\n';
+  return res;
+};
 exports.JoinExpr = JoinExpr;
 
 var AggExpr = function() {};
