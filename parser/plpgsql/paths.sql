@@ -66,6 +66,7 @@ BEGIN
   DROP TABLE tmp;
 
   CREATE TABLE tmp AS SELECT * FROM paths WHERE 1=0;
+  INSERT INTO tmp
   FOR r IN (SELECT links.src as links_src,links.dest as links_dest, links.cost as links_cost, paths.src as paths_src, paths.dest as paths_dest, paths.nxt as paths_nxt, paths.cost as paths_cost FROM links INNER JOIN paths ON links.dest = paths.src) LOOP
     INSERT INTO tmp VALUES (r.links_src, r.paths_dest, r.links_dest, r.links_cost + r.paths_cost);
   END LOOP;
