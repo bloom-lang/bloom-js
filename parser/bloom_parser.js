@@ -308,7 +308,7 @@ var grammar = {
     "sym_literal": [
       [
         ": ID",
-        "$$ = new yy.StrLiteral(\"'\"+$2+\"'\");"
+        "$$ = new yy.SymLiteral($2);"
       ]
     ],
     "parenth_form": [

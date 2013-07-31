@@ -153,22 +153,9 @@ BloomBlock.prototype.genJSCode = function() {
 };
 BloomBlock.prototype.genSQLCode = function(stateInfo) {
   var allTargets = {}, collection, res, fnName, self = this;
-  this.opStrata.forEach(function(stratum) {
-    for (collection in stratum.nonMonotonicTargets) {
-      if (stratum.nonMonotonicTargets.hasOwnProperty(collection)) {
-        allTargets[collection] = true;
-      }
-    }
-    for (collection in stratum.monotonicTargets) {
-      if (stratum.monotonicTargets.hasOwnProperty(collection)) {
-        allTargets[collection] = true;
-      }
-    }
-  });
   fnName = this.bootstrap ? 'bootstrap' : 'bloom';
   res = 'CREATE OR REPLACE FUNCTION ' + fnName + ' (\n) RETURNS VOID AS $$\n' +
-    'DECLARE\nall_same BOOL;\nrow_count INT;\nnew_row_count INT;\nr RECORD;\n' +
-    'BEGIN\n';
+    'DECLARE\nall_same BOOL;\nrow_count INT;\nnew_row_count INT;\nBEGIN\n';
   for (collection in allTargets) {
     if (allTargets.hasOwnProperty(collection)) {
       res += 'DROP TABLE IF EXISTS new_' + collection + ';\n';
@@ -177,6 +164,12 @@ BloomBlock.prototype.genSQLCode = function(stateInfo) {
     }
   }
   this.opStrata.forEach(function(stratum) {
+    for (collection in stratum.nonMonotonicTargets) {
+      if (stratum.nonMonotonicTargets.hasOwnProperty(collection)) {
+        res += 'CREATE TABLE new_' + collection + ' AS SELECT * FROM ' +
+          collection + ';\n';
+      }
+    }
     stratum.nonMonotonicOps.forEach(function(stmtIdx) {
       res += self.statements[stmtIdx].genSQLCode(stateInfo);
     });
@@ -189,6 +182,12 @@ BloomBlock.prototype.genSQLCode = function(stateInfo) {
     }
     if (stratum.monotonicOps.length > 0) {
       res += 'all_same := FALSE;\nWHILE NOT all_same LOOP\n';
+      for (collection in stratum.monotonicTargets) {
+        if (stratum.monotonicTargets.hasOwnProperty(collection)) {
+          res += 'CREATE TABLE new_' + collection + ' AS SELECT * FROM ' +
+            collection + ';\n';
+        }
+      }
       stratum.monotonicOps.forEach(function(stmtIdx) {
         res += self.statements[stmtIdx].genSQLCode(stateInfo);
       });
@@ -462,6 +461,20 @@ StrLiteral.prototype.genSQLCode = function() {
 };
 exports.StrLiteral = StrLiteral;
 
+var SymLiteral = function(value) {
+  this.value = value;
+};
+SymLiteral.prototype = new Base();
+SymLiteral.prototype.type = 'SymLiteral';
+SymLiteral.prototype.datavars = ['value'];
+SymLiteral.prototype.genJSCode = function() {
+  return this.value;
+};
+SymLiteral.prototype.genSQLCode = function() {
+  return this.value;
+};
+exports.SymLiteral = SymLiteral;
+
 var NumLiteral = function(value) {
   this.value = value;
 };
@@ -494,14 +507,13 @@ ArrDisplay.prototype.genJSCode = function() {
   return res;
 };
 ArrDisplay.prototype.genSQLCode = function() {
-  res = '(';
+  res = '';
   this.arr.forEach(function(val) {
     res += val.genSQLCode() + ', ';
   });
   if (this.arr.length > 0) {
     res = res.slice(0, -2);
   }
-  res += ')';
   return res;
 };
 exports.ArrDisplay = ArrDisplay;
@@ -715,7 +727,7 @@ ValuesExpr.prototype.genJSCode = function() {
 ValuesExpr.prototype.genSQLCode = function() {
   var res = 'INSERT INTO tmp\nVALUES\n';
   this.values.forEach(function(value) {
-    res += value.genSQLCode() + ',\n';
+    res += '(' + value.genSQLCode() + '),\n';
   });
   if (this.values.length > 0) {
     res = res.slice(0, -2);
@@ -828,5 +840,12 @@ ArgminExpr.prototype.children = ['groupKeys', 'minKey'];
 ArgminExpr.prototype.genJSCode = function() {
   return this.collectionName + '.argmin(' + this.groupKeys.genJSCode() + ', ' +
     this.minKey.genJSCode() + ')';
+};
+ArgminExpr.prototype.genSQLCode = function(stateInfo) {
+  return 'INSERT INTO tmp\nSELECT * FROM ' + this.collectionName + '\nWHERE (' +
+    this.groupKeys.genSQLCode() + ', ' + this.minKey.genSQLCode() +
+    ') IN (SELECT ' + this.groupKeys.genSQLCode() + ', MIN(' +
+    this.minKey.genSQLCode() + ') FROM ' + this.collectionName + ' GROUP BY ' +
+    this.groupKeys.genSQLCode() + ');\n';
 };
 exports.ArgminExpr = ArgminExpr;
