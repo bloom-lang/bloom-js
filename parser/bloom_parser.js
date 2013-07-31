@@ -30,7 +30,8 @@ var grammar = {
       ["if\\b", "return 'IF'"],
       ["elsif\\b", "return 'ELSIF'"],
       ["else\\b", "return 'ELSE'"],
-      ["new\\b", "return 'NEW'"],
+      ["int\\b", "return 'INT'"],
+      ["text\\b", "return 'TEXT'"],
       ["{id}", "return 'ID'"],
       ["{string}", "return 'STR_LITERAL'"],
       ["{number}", "return 'NUM_LITERAL'"],
@@ -106,14 +107,6 @@ var grammar = {
       ["", "$$ = [];"],
       ["state_body state_decl \\n", "$1.push($2);"]
     ],
-    "primary_list": [
-      ["", "$$ = [];"],
-      ["primary_list primary ,", "$1.push($2);"]
-    ],
-    "maybe_primary": [
-      "",
-      "primary"
-    ],
     "maybe_symbol": [
       "",
       "sym_literal"
@@ -153,7 +146,22 @@ var grammar = {
       ["PERIODIC", "$$ = $1;"]
     ],
     "field_list": [
-      ["[ primary_list maybe_primary ]", "$$ = $3 === undefined ? $2 : $2.concat([$3]);"]
+      ["[ typed_sym_list maybe_typed_sym ]", "$$ = $3 === undefined ? $2 : $2.concat([$3]);"]
+    ],
+    "typed_sym_list": [
+      ["", "$$ = [];"],
+      ["typed_sym_list typed_sym ,", "$1.push($2);"]
+    ],
+    "maybe_typed_sym": [
+      "",
+      "typed_sym"
+    ],
+    "typed_sym": [
+      ["sym_type sym_literal", "$$ = new yy.TypedSymLiteral($1, $2)"]
+    ],
+    "sym_type": [
+      ["INT", "$$ = $1;"],
+      ["TEXT", "$$ = $1;"]
     ],
     "bootstrap_block": [
       ["BOOTSTRAP DO \\n body END", "$$ = new yy.BloomBlock('bootstrap', $4);"]
@@ -291,7 +299,6 @@ var grammar = {
       "arr_display",
       "hash_display",
       "call",
-      "new_expr",
       "primary_block"
     ],
     "assignable": [
@@ -357,12 +364,6 @@ var grammar = {
       [
         "primary ( expression_list )",
         "$$ = new yy.Call($1, $3);"
-      ]
-    ],
-    "new_expr": [
-      [
-        "NEW ID ( expression_list )",
-        "$$ = new yy.NewExpr($2, $4);"
       ]
     ],
     "primary_block": [

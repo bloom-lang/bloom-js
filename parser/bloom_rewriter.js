@@ -6,10 +6,10 @@ var getStateInfo = function(classBlock) {
     if (statement.type === 'StateBlock') {
       statement.stateDecls.forEach(function(stateDecl) {
         keys = stateDecl.keys.map(function(key) {
-          return key.value;
+          return key.symLit.value;
         });
         vals = stateDecl.vals.map(function(val) {
-          return val.value;
+          return val.symLit.value;
         });
         res[stateDecl.name.value] = {
           collectionType: stateDecl.collectionType,

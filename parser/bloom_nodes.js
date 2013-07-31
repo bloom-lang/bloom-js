@@ -243,14 +243,14 @@ StateDecl.prototype.genSQLCode = function() {
   var res = 'DROP TABLE IF EXISTS ' + this.name.genJSCode() + ';\n';
   res += 'CREATE TABLE ' + this.name.genJSCode() + ' (\n';
   this.keys.forEach(function(key) {
-    res += key.genJSCode() + ',\n';
+    res += key.genSQLCode() + ',\n';
   });
   this.vals.forEach(function(val) {
-    res += val.genJSCode() + ',\n';
+    res += val.genSQLCode() + ',\n';
   });
   res += 'PRIMARY KEY (';
   this.keys.forEach(function(key) {
-    res += key.genJSCode() + ', ';
+    res += key.symLit.value + ', ';
   });
   if (this.keys.length > 0) {
     res = res.slice(0, -2);
@@ -426,7 +426,8 @@ var Unop = function(op, value) {
 };
 Unop.prototype = new Base();
 Unop.prototype.type = 'Unop';
-Unop.prototype.children = ['op', 'value'];
+Unop.prototype.datavars = ['op'];
+Unop.prototype.children = ['value'];
 Unop.prototype.genJSCode = function() {
   return this.op + ' ' + this.right;
 };
@@ -474,6 +475,22 @@ SymLiteral.prototype.genSQLCode = function() {
   return this.value;
 };
 exports.SymLiteral = SymLiteral;
+
+var TypedSymLiteral = function(symType, symLit) {
+  this.symType = symType;
+  this.symLit = symLit;
+};
+TypedSymLiteral.prototype = new Base();
+TypedSymLiteral.prototype.type = 'TypedSymLiteral';
+TypedSymLiteral.prototype.datavars = ['symType'];
+TypedSymLiteral.prototype.children = ['symLit'];
+TypedSymLiteral.prototype.genJSCode = function() {
+  return this.symLit.genJSCode();
+};
+TypedSymLiteral.prototype.genSQLCode = function() {
+  return this.symLit.genSQLCode() + ' ' + this.symType;
+};
+exports.TypedSymLiteral = TypedSymLiteral;
 
 var NumLiteral = function(value) {
   this.value = value;
@@ -722,7 +739,15 @@ ValuesExpr.prototype = new QueryExpr();
 ValuesExpr.prototype.type = 'ValuesExpr';
 ValuesExpr.prototype.children = ['values'];
 ValuesExpr.prototype.genJSCode = function() {
-  return 'values(' + this.values.genJSCode() + ')';
+  var res = 'values(';
+  this.values.forEach(function(value) {
+    res += value.genJSCode() + ', ';
+  });
+  if (this.values.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ')';
+  return res;
 };
 ValuesExpr.prototype.genSQLCode = function() {
   var res = 'INSERT INTO tmp\nVALUES\n';
@@ -747,7 +772,7 @@ SelectExpr.prototype.collections = function() { return [this.collectionName]; };
 SelectExpr.prototype.datavars = ['collectionName'];
 SelectExpr.prototype.children = ['selectCols'];
 SelectExpr.prototype.genJSCode = function() {
-  return this.collectionName + '.select(' + this.selectFn.genJSCode() + ')';
+  return this.collectionName + '.select(' + this.selectCols.genJSCode() + ')';
 };
 SelectExpr.prototype.genSQLCode = function(stateInfo) {
   return 'INSERT INTO tmp\nSELECT ' + this.selectCols.genSQLCode() + ' FROM ' +
@@ -772,7 +797,7 @@ JoinExpr.prototype.children = ['leftJoinKeys', 'rightJoinKeys', 'joinCols'];
 JoinExpr.prototype.genJSCode = function() {
   return this.leftCollectionName + '.join(' + this.rightCollectionName + ', ' +
     this.leftJoinKeys.genJSCode() + ', ' + this.rightJoinKeys.genJSCode() +
-    ', ' + this.joinFn.genJSCode() + ')';
+    ', ' + this.joinCols.genJSCode() + ')';
 }
 JoinExpr.prototype.genSQLCode = function(stateInfo) {
   var i, res, ljk = this.leftJoinKeys.arr, rjk = this.rightJoinKeys.arr;
