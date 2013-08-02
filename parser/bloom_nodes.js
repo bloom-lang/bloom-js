@@ -24,6 +24,20 @@ Base.prototype.traverse = function(fn, opt) {
     }
   });
 };
+Base.prototype.traverseReplace = function(fn) {
+  var self = this;
+  this.children.forEach(function(childName) {
+    var i, child = self[childName];
+    if (isArray(child)) {
+      for (i = 0; i < child.length; i++) {
+        child[i] = child[i].traverseReplace(fn);
+      }
+    } else {
+      self[childName] = child.traverseReplace(fn);
+    }
+  });
+  return fn(this);
+};
 Base.prototype.clone = function() {
   var self = this, res = new exports[this.type]();
   this.datavars.forEach(function(datavar) {
@@ -87,12 +101,15 @@ ClassBlock.prototype.genJSCode = function() {
     'var ' + this.name + ' = function() {\n' +
     'this._collections = {};\n' +
     'this._anonCollections = {};\n' +
-    'this._collectionNodes = {};\n' +
-    'this._connectedComponents = {};\n' +
-    'this._ops = [];\n' +
-    'this._opStrata = null;\n' +
-    'this.initializeState();\n' +
-    'this.initializeOps();\n' +
+    'this._collectionKeys = {};\n' +
+    'this._bootstrapOps = [];\n' +
+    'this._bootstrapOpStrata = [];\n' +
+    'this._bootstrapRun = false;\n' +
+    'this._bloomOps = [];\n' +
+    'this._bloomOpStrata = [];\n' +
+    'this.initState();\n' +
+    'this.initBootstrapOps();\n' +
+    'this.initBloomOps();\n' +
     '};\n' +
     this.name + '.prototype = new Bloom();\n';
   this.statements.forEach(function(statement) {
@@ -116,7 +133,7 @@ StateBlock.prototype = new Base();
 StateBlock.prototype.type = 'StateBlock';
 StateBlock.prototype.children = ['stateDecls'];
 StateBlock.prototype.genJSCode = function(className) {
-  var res = className + '.prototype.initializeState = function() {\n';
+  var res = className + '.prototype.initState = function() {\n';
   this.stateDecls.forEach(function(stateDecl) {
     res += stateDecl.genJSCode();
   });
@@ -133,7 +150,6 @@ StateBlock.prototype.genSQLCode = function() {
 exports.StateBlock = StateBlock;
 
 var BloomBlock = function(name, statements) {
-  this.className = '';
   this.name = name === undefined ? '' : name.value;
   this.statements = statements;
   this.bootstrap = name === 'bootstrap';
@@ -141,13 +157,23 @@ var BloomBlock = function(name, statements) {
 };
 BloomBlock.prototype = new Base();
 BloomBlock.prototype.type = 'BloomBlock';
-BloomBlock.prototype.datavars = ['className', 'name', 'bootstrap', 'opStrata'];
+BloomBlock.prototype.datavars = ['name', 'bootstrap', 'opStrata'];
 BloomBlock.prototype.children = ['statements'];
 BloomBlock.prototype.genJSCode = function(className, stateInfo) {
-  var res = className + '.prototype.initializeOps = function() {\n';
-  this.statements.forEach(function(statement) {
-    res += statement.genJSCode(stateInfo);
-  });
+  var i, stratum, res, blockType, self = this;
+  blockType = this.bootstrap ? 'Bootstrap' : 'Bloom';
+  res = className + '.prototype.init' + blockType +  'Ops = function() {\n';
+  for (i = 0; i < this.opStrata.length; i++) {
+    stratum = this.opStrata[i];
+    if (stratum !== undefined) {
+      stratum.nonMonotonicOps.forEach(function(stmtIdx) {
+        res += self.statements[stmtIdx].genJSCode(2*i, blockType, stateInfo);
+      });
+      stratum.monotonicOps.forEach(function(stmtIdx) {
+        res += self.statements[stmtIdx].genJSCode(2*i+1, blockType, stateInfo);
+      });
+    }
+  }
   res += '};\n';
   return res;
 };
@@ -270,10 +296,11 @@ BloomStmt.prototype = new Base();
 BloomStmt.prototype.type = 'BloomStmt';
 BloomStmt.prototype.datavars = ['bloomOp', 'dependencyInfo'];
 BloomStmt.prototype.children = ['targetCollection', 'queryExpr'];
-BloomStmt.prototype.genJSCode = function(stateInfo) {
-  return 'this.op("' + this.bloomOp + '", this._collections.' +
-    this.targetCollection.genJSCode() + ', ' + this.queryExpr.genJSCode() +
-    ');\n';
+BloomStmt.prototype.genJSCode = function(opStratum, blockType, stateInfo) {
+  return 'this.op("' + this.bloomOp + '", "' +
+    this.targetCollection.genJSCode() + '", ' +
+    this.queryExpr.genJSCode(stateInfo) + ', ' + opStratum + ', "' + blockType +
+    '");\n';
 };
 BloomStmt.prototype.genSQLCode = function(stateInfo) {
   var res, target, targetKeys, targetKeyStr = '';
@@ -755,10 +782,22 @@ SelectExpr.prototype.type = 'SelectExpr';
 SelectExpr.prototype.collections = function() { return [this.collectionName]; };
 SelectExpr.prototype.datavars = ['collectionName'];
 SelectExpr.prototype.children = ['selectCols'];
-SelectExpr.prototype.genJSCode = function() {
-  return 'this._collections.' + this.collectionName + '.select(\nfunction(' +
-    this.collectionName + ') { return ' + this.selectCols.genJSCode() +
-    '; }\n)';
+SelectExpr.prototype.genJSCode = function(stateInfo) {
+  var sCols, self = this, res;
+  sCols = this.selectCols.clone();
+  sCols.traverseReplace(function(node) {
+    var idx;
+    if (node.type === 'AttributeRef' && node.obj.type === 'VarName' &&
+        node.attribute.type === 'VarName' &&
+        node.obj.name === self.collectionName) {
+      idx = stateInfo[self.collectionName].cols.indexOf(node.attribute.name);
+      return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
+    }
+    return node;
+  });
+  res = 'this._collections.' + this.collectionName + '.select(\nfunction(' +
+    this.collectionName + ') { return ' + sCols.genJSCode() + '; }\n)';
+  return res;
 };
 SelectExpr.prototype.genSQLCode = function(stateInfo) {
   return 'INSERT INTO tmp\nSELECT ' + this.selectCols.genSQLCode() + ' FROM ' +
@@ -780,12 +819,13 @@ JoinExpr.prototype.collections = function() {
 };
 JoinExpr.prototype.datavars = ['leftCollectionName', 'rightCollectionName'];
 JoinExpr.prototype.children = ['leftJoinKeys', 'rightJoinKeys', 'joinCols'];
-JoinExpr.prototype.genJSCode = function() {
-  var self = this, res = 'this._collections.' + this.leftCollectionName +
+JoinExpr.prototype.genJSCode = function(stateInfo) {
+  var jCols, self = this, res = 'this._collections.' + this.leftCollectionName +
     '.join(\nthis._collections.' + this.rightCollectionName + ',\nfunction(' +
     this.leftCollectionName + ') { return JSON.stringify([';
   this.leftJoinKeys.arr.forEach(function(key) {
-    res += self.leftCollectionName + '.' + key.genJSCode() + ', ';
+    var idx = stateInfo[self.leftCollectionName].cols.indexOf(key.value);
+    res += self.leftCollectionName + '[' + idx + '], ';
   });
   if (this.leftJoinKeys.arr.length > 0) {
     res = res.slice(0, -2);
@@ -793,13 +833,26 @@ JoinExpr.prototype.genJSCode = function() {
   res += ']); },\nfunction(' + this.rightCollectionName +
     ') { return JSON.stringify([';
   this.rightJoinKeys.arr.forEach(function(key) {
-    res += self.rightCollectionName + '.' + key.genJSCode() + ', ';
+    var idx = stateInfo[self.rightCollectionName].cols.indexOf(key.value);
+    res += self.rightCollectionName + '[' + idx + '], ';
   });
   if (this.rightJoinKeys.arr.length > 0) {
     res = res.slice(0, -2);
   }
-  res += ']); },\nfuntion(' + this.leftCollectionName + ', ' +
-    this.rightCollectionName + ') { return ' + this.joinCols.genJSCode() +
+  jCols = this.joinCols.clone();
+  jCols.traverseReplace(function(node) {
+    var idx;
+    if (node.type === 'AttributeRef' && node.obj.type === 'VarName' &&
+        node.attribute.type === 'VarName' &&
+        (node.obj.name === self.leftCollectionName ||
+         node.obj.name === self.rightCollectionName)) {
+      idx = stateInfo[node.obj.name].cols.indexOf(node.attribute.name);
+      return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
+    }
+    return node;
+  });
+  res += ']); },\nfunction(' + this.leftCollectionName + ', ' +
+    this.rightCollectionName + ') { return ' + jCols.genJSCode() +
     '; }\n)';
   return res;
 }
@@ -866,21 +919,23 @@ ArgminExpr.prototype = new AggExpr();
 ArgminExpr.prototype.type = 'ArgminExpr';
 ArgminExpr.prototype.datavars = ['collectionName'];
 ArgminExpr.prototype.children = ['groupKeys', 'minKey'];
-ArgminExpr.prototype.genJSCode = function() {
-  var self = this, res = 'this._collections.' + this.collectionName +
+ArgminExpr.prototype.genJSCode = function(stateInfo) {
+  var minIdx, self = this, res = 'this._collections.' + this.collectionName +
     '.groupBy(\nfunction(' + this.collectionName +
     ') { return JSON.stringify([';
   this.groupKeys.arr.forEach(function(key) {
-    res += self.collectionName + '.' + key.genJSCode() + ', ';
+    var idx = stateInfo[self.collectionName].cols.indexOf(key.value);
+    res += self.collectionName + '[' + idx + '], ';
   });
   if (this.groupKeys.arr.length > 0) {
     res = res.slice(0, -2);
   }
+  minIdx = stateInfo[self.collectionName].cols.indexOf(this.minKey.value);
   res += ']); },\nfunction (' + this.collectionName + ') { return ' +
     this.collectionName + '; },\nfunction(k, xs) {\nvar res;\n' +
     'var min = Number.POSITIVE_INFINITY;\nxs.forEach(function(x) {\n' +
-    'if (x.' + this.minKey.genJSCode() + ' < min) {\nmin = x.' +
-    this.minKey.genJSCode() + ';\nres = x;\n}\n});\nreturn res;\n}\n)';
+    'if (x[' + minIdx + '] < min) {\nmin = x[' + minIdx +
+    '];\nres = x;\n}\n});\nreturn res;\n}\n)';
   return res;
 };
 ArgminExpr.prototype.genSQLCode = function(stateInfo) {

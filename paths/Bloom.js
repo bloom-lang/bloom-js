@@ -17,10 +17,6 @@ prototype.addCollection = function(name, type, keys, vals) {
   }
   this._collections[name] = new BloomCollection(name, type);
   this._collectionKeys[name] = keys;
-  this._collectionNodes[name] = {
-    children: {},
-    parents: {}
-  };
   return this._collections[name];
 };
 
@@ -30,188 +26,53 @@ prototype.addCollectionFromArray = function(arr) {
   return this._anonCollections[name];
 };
 
-prototype.addDelta = function(lhs, rhs) {
-  if (Object.prototype.toString.call(rhs) === '[object Array]') {
-    rhs = new BloomCollection('', 'anon', rhs);
-    rhs._delta = rhs._data;
-  }
-  lhs._delta = Ix.Enumerable.fromArray(
-    rhs._delta.union(lhs._delta, cmpObj).toArray()
-  );
-}
-
-prototype.op = function(type, lhs, rhs, spec) {
-  var targetNode, self = this;
+prototype.op = function(type, lhsName, rhs, opStratum, blockType) {
+  var op, ops, opStrata;
+  ops = blockType === 'Bloom' ? this._bloomOps : this._bootstrapOps;
+  opStrata = blockType === 'Bloom' ? this._bloomOpStrata :
+    this._bootstrapOpStrata;
   if (Object.prototype.toString.call(rhs) === '[object Array]') {
     rhs = this.addCollectionFromArray(rhs);
   }
-  if (type !== ':=') {
-    spec = {};
-  }
-  if (spec.monotonicDeps === undefined) {
-    spec.monotonicDeps = [];
-  }
-  if (spec.nonMonotonicDeps === undefined) {
-    spec.nonMonotonicDeps = [];
-  }
-  this._ops.push({
+  op = {
     type: type,
-    lhs: lhs,
-    rhs: rhs,
-    target: spec.target,
-    fullyNonMonotonic: spec.monotonicDeps.length === 0 &&
-      spec.nonMonotonicDeps.length > 0
-  });
-  if (type === ':=') {
-    targetNode = this._collectionNodes[spec.target]
-    spec.monotonicDeps.forEach(function(parentName) {
-      if (targetNode.parents[parentName] !== 'non-monotonic') {
-        targetNode.parents[parentName] = 'monotonic';
-        self._collectionNodes[parentName].children[spec.target] = 'monotonic';
-      }
-    });
-    spec.nonMonotonicDeps.forEach(function(parentName) {
-      targetNode.parents[parentName] = 'non-monotonic';
-      self._collectionNodes[parentName].children[spec.target] = 'non-monotonic';
-    });
-    this._opStrata = null;
+    lhs: this._collections[lhsName],
+    rhs: rhs
+  };
+  ops.push(op);
+  if (opStratum !== -1) {
+    if (opStrata[opStratum] === undefined) {
+      opStrata[opStratum] = {
+        targets: {},
+        ops: []
+      };
+    }
+    opStrata[opStratum].targets[lhsName] = true;
+    opStrata[opStratum].ops.push(op);
   }
 };
 
-prototype.stratifyOps = function() {
-  var name, node, parentName, childName, childNode, toVisit = [],
-    postOrder = [], ccToVisit = [], ccCounter = -1, comp, num, childNum,
-    childComp, topoToVisit = [], ccStratum, opStratum, self = this;
-  for (name in this._collectionNodes) {
-    if (this._collectionNodes.hasOwnProperty(name)) {
-      this._collectionNodes[name].visited = false;
-      this._collectionNodes[name].visitedTwice = false;
-      this._collectionNodes[name].ccNum = -1;
-      toVisit.push(name);
-    }
-  }
-  // Run a DFS on the reverse of our dependency graph (following parent pointers
-  // rather than children), so by the end of the traversal the end of the
-  // postOrder array will be a sink in our original graph
-  while (toVisit.length > 0) {
-    name = toVisit.pop();
-    node = this._collectionNodes[name];
-    if (!node.visited) {
-      node.visited = true;
-      toVisit.push(name);
-      for (parentName in node.parents) {
-        if (node.parents.hasOwnProperty(parentName)) {
-          if (!this._collectionNodes[parentName].visited) {
-            toVisit.push(parentName);
-          }
-        }
-      }
-    } else if (!node.visitedTwice) {
-      node.visitedTwice = true;
-      postOrder.push(name);
-    }
-  }
-  // Find the connected components of our graph by running a DFS from each node,
-  // starting from the end of our postOrder array (processing sinks first)
-  while (postOrder.length > 0) {
-    name = postOrder.pop();
-    if (this._collectionNodes[name].ccNum === -1) {
-      ccCounter++;
-      this._connectedComponents[ccCounter] = {
-        stratum: -1,
-        members: [],
-        children: {},
-        numParents: 0
-      };
-      comp = this._connectedComponents[ccCounter];
-      ccToVisit.push(name);
-    }
-    while (ccToVisit.length > 0) {
-      name = ccToVisit.pop();
-      node = this._collectionNodes[name];
-      if (node.ccNum === -1) {
-        node.ccNum = ccCounter;
-        comp.members.push(name);
-        for (childName in node.children) {
-          if (node.children.hasOwnProperty(childName)) {
-            childNode = this._collectionNodes[childName];
-            if (childNode.ccNum === -1 || childNode.ccNum === ccCounter) {
-              if (node.children[childName] === 'non-monotonic') {
-                console.error('Error: Non-monotonic loop detected in ' +
-                              'collection dependency graph, caused by the ' +
-                              'non-monotonic op from %s into %s',
-                              name, childName);
-              }
-              if (childNode.ccNum === -1) {
-                ccToVisit.push(childName);
-              }
-            } else {
-              if (comp.children[childNode.ccNum] !== 'non-monotonic') {
-                if (comp.children[childNode.ccNum] === undefined) {
-                  this._connectedComponents[childNode.ccNum].numParents++;
-                }
-                comp.children[childNode.ccNum] = node.children[childName];
-              }
-            }
-          }
-        }
+prototype.tick = function() {
+  if (!this._bootstrapRun) {
+    this.evalOps(this._bootstrapOps, this._bootstrapOpStrata);
+    for (name in this._collections) {
+      if (this._collections.hasOwnProperty(name)) {
+        collection = this._collections[name];
+        collection._replaceData = Ix.Enumerable.fromArray(
+          collection._data.union(collection._replaceData, cmpObj).toArray()
+        );
+        collection._data = Ix.Enumerable.empty();
       }
     }
+    this._bootstrapRun = true;
   }
-  // Topologically sort the connected components into layers separated by
-  // non-monotonic operations
-  for (num in this._connectedComponents) {
-    if (this._connectedComponents.hasOwnProperty(num) &&
-        this._connectedComponents[num].numParents === 0) {
-      this._connectedComponents[num].stratum = 0;
-      topoToVisit.push(num);
-    }
-  }
-  while (topoToVisit.length > 0) {
-    num = topoToVisit.pop();
-    comp = this._connectedComponents[num];
-    for (childNum in comp.children) {
-      if (comp.children.hasOwnProperty(childNum)) {
-        childComp = this._connectedComponents[childNum];
-        if (comp.children[childNum] === 'monotonic') {
-          childComp.stratum = Math.max(childComp.stratum, comp.stratum);
-        } else if (comp.children[childNum] === 'non-monotonic') {
-          childComp.stratum = Math.max(childComp.stratum, comp.stratum + 1);
-        }
-        childComp.numParents--;
-        if (childComp.numParents === 0) {
-          topoToVisit.push(childNum);
-        }
-      }
-    }
-  }
-  this._opStrata = [];
-  this._ops.forEach(function(op) {
-    if (op.type === ':=') {
-      num = self._collectionNodes[op.target].ccNum;
-      ccStratum = self._connectedComponents[num].stratum;
-      opStratum = op.fullyNonMonotonic ? 2 * ccStratum - 1: 2 * ccStratum;
-      if (self._opStrata[opStratum] === undefined) {
-        self._opStrata[opStratum] = {
-          targets: {},
-          ops: []
-        };
-      }
-      self._connectedComponents[num].members.forEach(function(collectionName) {
-        self._opStrata[opStratum].targets[collectionName] = true;
-      });
-      self._opStrata[opStratum].ops.push(op);
-    }
-  });
-};
+  this.evalOps(this._bloomOps, this._bloomOpStrata);
+}
 
 // Seminaive Evaluation
-prototype.tick = function() {
-  var i, name, collection, allEmpty, firstIter,
-    prevCollections = [], self = this;
-  if (this._opStrata === null) {
-    this.stratifyOps();
-  }
+prototype.evalOps = function(ops, opStrata) {
+  var i, name, collection, allEmpty, firstIter, allTargets = {}
+    prevCollections = {}, self = this;
   // Clear scratch collections
   for (name in this._collections) {
     if (this._collections.hasOwnProperty(name)) {
@@ -250,20 +111,43 @@ prototype.tick = function() {
       this._collections[name]._stratumDelta = Ix.Enumerable.empty();
     }
   }
+  // Find all targets from any stratum
+  for (i = 0; i < opStrata.length; i++) {
+    if (opStrata[i] !== undefined) {
+      for (name in opStrata[i].targets) {
+        if (opStrata[i].targets.hasOwnProperty(name)) {
+          allTargets[name] = true;
+        }
+      }
+    }
+  }
+  // If a collection is not a target in any stratum, treat it as a
+  // prevCollection from the beginning
+  for (name in this._collections) {
+    if (this._collections.hasOwnProperty(name) && !allTargets[name]) {
+      collection = this._collections[name];
+      collection._stratumDelta = collection._delta;
+      collection._data = collection._oldData.concat(collection._stratumDelta);
+      collection._delta = Ix.Enumerable.empty();
+      prevCollections[name] = true;
+    }
+  }
   // Handle instantaneous merges
-  for (i = 0; i < this._opStrata.length; i++) {
-    if (this._opStrata[i] !== undefined) {
-      // If i is odd, all operations are purely non-monotonic, so there is no
+  for (i = 0; i < opStrata.length; i++) {
+    if (opStrata[i] !== undefined) {
+      // If i is even, all operations are purely non-monotonic, so there is no
       // need to run a loop and we operate on previous data rather than deltas
-      if (i % 2 === 1) {
-        this._opStrata[i].ops.forEach(function(op) {
+      if (i % 2 === 0) {
+        opStrata[i].ops.forEach(function(op) {
           op.lhs._newData = Ix.Enumerable.fromArray(
             op.rhs.getData().union(op.lhs._newData, cmpObj).toArray()
           );
         });
-        for (name in this._opStrata[i].targets) {
-          if (this._opStrata[i].targets.hasOwnProperty(name)) {
+        for (name in opStrata[i].targets) {
+          if (opStrata[i].targets.hasOwnProperty(name)) {
             collection = this._collections[name];
+            collection._newData = collection._newData.union(collection._delta,
+                                                            cmpObj);
             collection._delta = Ix.Enumerable.fromArray(
               collection._newData.except(collection._data, cmpObj).toArray()
             );
@@ -272,10 +156,10 @@ prototype.tick = function() {
         }
         // If next stratum is undefined (incl. if this is the last stratum),
         // or if this target is not found in next stratum, move deltas into data
-        for (name in this._opStrata[i].targets) {
-          if (this._opStrata[i].targets.hasOwnProperty(name)) {
-            if (this._opStrata[i+1] === undefined ||
-                !this._opStrata[i+1].targets.hasOwnProperty(name)) {
+        for (name in opStrata[i].targets) {
+          if (opStrata[i].targets.hasOwnProperty(name)) {
+            if (opStrata[i+1] === undefined ||
+                !opStrata[i+1].targets.hasOwnProperty(name)) {
               collection = this._collections[name];
               collection._stratumDelta = collection._delta;
               collection._data =
@@ -306,14 +190,14 @@ prototype.tick = function() {
         // in our current stratum
         firstIter = true;
         do {
-          this._opStrata[i].ops.forEach(function(op) {
+          opStrata[i].ops.forEach(function(op) {
             op.lhs._newData = Ix.Enumerable.fromArray(
               op.rhs.getDelta().union(op.lhs._newData, cmpObj).toArray()
             );
           });
           allEmpty = true;
-          for (name in this._opStrata[i].targets) {
-            if (this._opStrata[i].targets.hasOwnProperty(name)) {
+          for (name in opStrata[i].targets) {
+            if (opStrata[i].targets.hasOwnProperty(name)) {
               collection = this._collections[name];
               collection._stratumDelta = Ix.Enumerable.fromArray(
                 collection._stratumDelta.concat(collection._delta).toArray()
@@ -351,8 +235,8 @@ prototype.tick = function() {
           }
         } while (!allEmpty);
         // Update prevCollections with targets from this stratum
-        for (name in this._opStrata[i].targets) {
-          if (this._opStrata[i].targets.hasOwnProperty(name)) {
+        for (name in opStrata[i].targets) {
+          if (opStrata[i].targets.hasOwnProperty(name)) {
             prevCollections[name] = true;
           }
         }
@@ -360,7 +244,7 @@ prototype.tick = function() {
     }
   }
   // Handle deferred operators
-  this._ops.forEach(function(op) {
+  ops.forEach(function(op) {
     if (op.type === '<+-') {
       op.lhs._replaceData = Ix.Enumerable.fromArray(
         op.rhs.getData().union(op.lhs._replaceData, cmpObj).toArray()

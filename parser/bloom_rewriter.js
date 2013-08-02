@@ -14,7 +14,8 @@ var getStateInfo = function(classBlock) {
         res[stateDecl.name.value] = {
           collectionType: stateDecl.collectionType,
           keys: keys,
-          vals: vals
+          vals: vals,
+          cols: keys.concat(vals)
         };
       });
     }
