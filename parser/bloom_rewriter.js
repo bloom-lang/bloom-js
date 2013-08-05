@@ -48,7 +48,7 @@ var getColumnArray = function(funcExpr, collectionNames) {
         }
       }
       if (argIdx !== -1) {
-        node.obj = new nodes.VarName(collectionNames[argIdx]);
+        //node.obj = new nodes.VarName(collectionNames[argIdx]);
       }
     }
   });
@@ -59,13 +59,14 @@ var rewriteQueryExpr = function(qe) {
   var i, primary, fnName, leftCollectionName, rightCollectionName, leftKeysArr,
     rightKeysArr, res = qe;
   if (qe.type === 'AttributeRef' && qe.attribute.name === 'inspected') {
-    res = new nodes.SelectExpr(qe.obj.name, new nodes.VarName('*'));
+    res = new nodes.SelectExpr(qe.obj.name, 'x', new nodes.VarName('*'));
   } else if (qe.type === 'ArrDisplay') {
     res = new nodes.ValuesExpr(qe.arr);
   } else if (qe.type === 'PrimaryBlock') {
     if (qe.primary.type === 'VarName') {
       res = new nodes.SelectExpr(
         qe.primary.name,
+        qe.funcExpr.args[0].name,
         getColumnArray(qe.funcExpr, [qe.primary.name])
       );
     } else if (qe.primary.type === 'Call' &&
@@ -85,6 +86,8 @@ var rewriteQueryExpr = function(qe) {
           rightCollectionName,
           new nodes.ArrDisplay(leftKeysArr),
           new nodes.ArrDisplay(rightKeysArr),
+          qe.funcExpr.args[0].name,
+          qe.funcExpr.args[1].name,
           getColumnArray(qe.funcExpr, [leftCollectionName, rightCollectionName])
         );
       } else if (fnName === 'reduce') {

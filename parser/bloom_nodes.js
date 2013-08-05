@@ -555,8 +555,8 @@ HashDisplay.prototype.type = 'HashDisplay';
 HashDisplay.prototype.children = ['keys', 'vals'];
 HashDisplay.prototype.genJSCode = function() {
   var i, res = '{';
-  for (i = 0; i < keys.length; i++) {
-    res += keys[i].genJSCode() + ': ' + vals[i].genJSCode() + ', ';
+  for (i = 0; i < this.keys.length; i++) {
+    res += this.keys[i].genJSCode() + ': ' + this.vals[i].genJSCode() + ', ';
   }
   if (this.keys.length > 0) {
     res = res.slice(0, -2);
@@ -647,14 +647,14 @@ PrimaryBlock.prototype.genJSCode = function() {
 exports.PrimaryBlock = PrimaryBlock;
 
 var FuncExpr = function(args, statements) {
-    this.args = args;
-    this.statements = statements;
+  this.args = args;
+  this.statements = statements;
 };
 FuncExpr.prototype = new Base();
 FuncExpr.prototype.type = 'FuncExpr';
 FuncExpr.prototype.children = ['args', 'statements'];
 FuncExpr.prototype.genJSCode = function() {
-  res = 'function(';
+  var i, res = 'function(';
   this.args.forEach(function(arg) {
     res += arg.genJSCode() + ', ';
   });
@@ -662,7 +662,7 @@ FuncExpr.prototype.genJSCode = function() {
     res = res.slice(0, -2);
   }
   res += ') {\n';
-  for (var i = 0; i < this.statements.length; i++) {
+  for (i = 0; i < this.statements.length; i++) {
     if (i === this.statements.length - 1) {
       res += 'return ';
     }
@@ -773,14 +773,15 @@ ValuesExpr.prototype.genSQLCode = function() {
 };
 exports.ValuesExpr = ValuesExpr;
 
-var SelectExpr = function(collectionName, selectCols) {
+var SelectExpr = function(collectionName, varName, selectCols) {
   this.collectionName = collectionName;
+  this.varName = varName;
   this.selectCols = selectCols;
 };
 SelectExpr.prototype = new QueryExpr();
 SelectExpr.prototype.type = 'SelectExpr';
 SelectExpr.prototype.collections = function() { return [this.collectionName]; };
-SelectExpr.prototype.datavars = ['collectionName'];
+SelectExpr.prototype.datavars = ['collectionName', 'varName'];
 SelectExpr.prototype.children = ['selectCols'];
 SelectExpr.prototype.genJSCode = function(stateInfo) {
   var sCols, self = this, res;
@@ -788,28 +789,30 @@ SelectExpr.prototype.genJSCode = function(stateInfo) {
   sCols.traverseReplace(function(node) {
     var idx;
     if (node.type === 'AttributeRef' && node.obj.type === 'VarName' &&
-        node.attribute.type === 'VarName' &&
-        node.obj.name === self.collectionName) {
+        node.attribute.type === 'VarName' && node.obj.name === self.varName) {
       idx = stateInfo[self.collectionName].cols.indexOf(node.attribute.name);
       return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
     }
     return node;
   });
   res = 'this._collections.' + this.collectionName + '.select(\nfunction(' +
-    this.collectionName + ') { return ' + sCols.genJSCode() + '; }\n)';
+    this.varName + ') { return ' + sCols.genJSCode() + '; }\n)';
   return res;
 };
 SelectExpr.prototype.genSQLCode = function(stateInfo) {
   return 'INSERT INTO tmp\nSELECT ' + this.selectCols.genSQLCode() + ' FROM ' +
-    this.collectionName + ';\n';
+    this.collectionName + ' ' + this.varName + ';\n';
 };
 exports.SelectExpr = SelectExpr;
 
-var JoinExpr = function(leftCol, rightCol, leftKeys, rightKeys, joinCols) {
+var JoinExpr = function(leftCol, rightCol, leftKeys, rightKeys, leftVar,
+                        rightVar, joinCols) {
   this.leftCollectionName = leftCol;
   this.rightCollectionName = rightCol;
   this.leftJoinKeys = leftKeys;
   this.rightJoinKeys = rightKeys;
+  this.leftVarName = leftVar;
+  this.rightVarName = rightVar;
   this.joinCols = joinCols;
 };
 JoinExpr.prototype = new QueryExpr();
@@ -817,24 +820,24 @@ JoinExpr.prototype.type = 'JoinExpr';
 JoinExpr.prototype.collections = function() {
   return [this.leftCollectionName, this.rightCollectionName];
 };
-JoinExpr.prototype.datavars = ['leftCollectionName', 'rightCollectionName'];
+JoinExpr.prototype.datavars = ['leftCollectionName', 'rightCollectionName',
+  'leftVarName', 'rightVarName'];
 JoinExpr.prototype.children = ['leftJoinKeys', 'rightJoinKeys', 'joinCols'];
 JoinExpr.prototype.genJSCode = function(stateInfo) {
   var jCols, self = this, res = 'this._collections.' + this.leftCollectionName +
-    '.join(\nthis._collections.' + this.rightCollectionName + ',\nfunction(' +
-    this.leftCollectionName + ') { return JSON.stringify([';
+    '.join(\nthis._collections.' + this.rightCollectionName +
+    ',\nfunction(x) { return JSON.stringify([';
   this.leftJoinKeys.arr.forEach(function(key) {
     var idx = stateInfo[self.leftCollectionName].cols.indexOf(key.value);
-    res += self.leftCollectionName + '[' + idx + '], ';
+    res += 'x[' + idx + '], ';
   });
   if (this.leftJoinKeys.arr.length > 0) {
     res = res.slice(0, -2);
   }
-  res += ']); },\nfunction(' + this.rightCollectionName +
-    ') { return JSON.stringify([';
+  res += ']); },\nfunction(y) { return JSON.stringify([';
   this.rightJoinKeys.arr.forEach(function(key) {
     var idx = stateInfo[self.rightCollectionName].cols.indexOf(key.value);
-    res += self.rightCollectionName + '[' + idx + '], ';
+    res += 'y[' + idx + '], ';
   });
   if (this.rightJoinKeys.arr.length > 0) {
     res = res.slice(0, -2);
@@ -843,29 +846,34 @@ JoinExpr.prototype.genJSCode = function(stateInfo) {
   jCols.traverseReplace(function(node) {
     var idx;
     if (node.type === 'AttributeRef' && node.obj.type === 'VarName' &&
-        node.attribute.type === 'VarName' &&
-        (node.obj.name === self.leftCollectionName ||
-         node.obj.name === self.rightCollectionName)) {
-      idx = stateInfo[node.obj.name].cols.indexOf(node.attribute.name);
-      return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
+        node.attribute.type === 'VarName') {
+      if (node.obj.name === self.leftVarName) {
+        idx = stateInfo[self.leftCollectionName].cols.
+          indexOf(node.attribute.name);
+        return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
+      } else if (node.obj.name === self.rightVarName) {
+        idx = stateInfo[self.rightCollectionName].cols.
+          indexOf(node.attribute.name);
+        return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
+      }
     }
     return node;
   });
-  res += ']); },\nfunction(' + this.leftCollectionName + ', ' +
-    this.rightCollectionName + ') { return ' + jCols.genJSCode() +
-    '; }\n)';
+  res += ']); },\nfunction(' + this.leftVarName + ', ' + this.rightVarName +
+    ') { return ' + jCols.genJSCode() + '; }\n)';
   return res;
 }
 JoinExpr.prototype.genSQLCode = function(stateInfo) {
   var i, res, ljk = this.leftJoinKeys.arr, rjk = this.rightJoinKeys.arr;
   res = 'INSERT INTO tmp\nSELECT ' + this.joinCols.genSQLCode() + ' FROM ' +
-    this.leftCollectionName + ' INNER JOIN ' + this.rightCollectionName;
+    this.leftCollectionName + ' ' + this.leftVarName + ' INNER JOIN '+
+    this.rightCollectionName + ' ' + this.rightVarName;
   if (ljk.length > 0) {
     res += ' ON ';
   }
   for (i = 0; i < ljk.length; i++) {
-    res += this.leftCollectionName + '.' + ljk[i].value + ' = ' +
-      this.rightCollectionName + '.' + rjk[i].value + ', ';
+    res += this.leftVarName + '.' + ljk[i].value + ' = ' + this.rightVarName +
+      '.' + rjk[i].value + ', ';
   }
   if (ljk.length > 0) {
     res = res.slice(0, -2);

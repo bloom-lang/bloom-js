@@ -32,6 +32,7 @@ var grammar = {
       ["else\\b", "return 'ELSE'"],
       ["int\\b", "return 'INT'"],
       ["text\\b", "return 'TEXT'"],
+      ["real\\b", "return 'REAL'"],
       ["{id}", "return 'ID'"],
       ["{string}", "return 'STR_LITERAL'"],
       ["{number}", "return 'NUM_LITERAL'"],
@@ -131,10 +132,8 @@ var grammar = {
       ["STATE DO \\n state_body END", "$$ = new yy.StateBlock($4);"]
     ],
     "state_decl": [
-      ["CHANNEL primary", "$$ = new yy.StateDecl($1, $2, ['@address', 'val'], []);"],
       ["CHANNEL primary , field_list", "$$ = new yy.StateDecl($1, $2, $4, []);"],
       ["CHANNEL primary , field_list => field_list", "$$ = new yy.StateDecl($1, $2, $4, $6);"],
-      ["collection_type primary", "$$ = new yy.StateDecl($1, $2, [new yy.StrLiteral(\"'key'\")], [new yy.StrLiteral(\"'val'\")]);"],
       ["collection_type primary , field_list", "$$ = new yy.StateDecl($1, $2, $4, []);"],
       ["collection_type primary , field_list => field_list", "$$ = new yy.StateDecl($1, $2, $4, $6);"]
     ],
@@ -161,7 +160,9 @@ var grammar = {
     ],
     "sym_type": [
       ["INT", "$$ = $1;"],
-      ["TEXT", "$$ = $1;"]
+      ["TEXT", "$$ = $1;"],
+      ["REAL", "$$ = $1;"],
+      ["sym_type [ ]", "$$ = $1 + $2 + $3;"]
     ],
     "bootstrap_block": [
       ["BOOTSTRAP DO \\n body END", "$$ = new yy.BloomBlock('bootstrap', $4);"]
