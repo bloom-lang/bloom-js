@@ -191,7 +191,7 @@ var grammar = {
       ["IF expression \\n body else_clause", "$$ = new yy.IfStmt($2, $4, $5);"]
     ],
     "else_clause": [
-      ["END", "$$ = new yy.ElseClause(null);"],
+      ["END", "$$ = new yy.ElseClause([]);"],
       ["ELSIF expression \\n body else_stmt", "$$ = new yy.ElseIfClause($2, $4, $5);"],
       ["ELSE \\n body END", "$$ = new yy.ElseClause($3)"]
     ],

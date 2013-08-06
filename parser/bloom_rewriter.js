@@ -37,22 +37,19 @@ var consolidateBloomBlocks = function(classBlock) {
 };
 
 var getColumnArray = function(funcExpr, collectionNames) {
-  var lastStmt = funcExpr.statements[funcExpr.statements.length - 1].clone(),
-    resArr = [];
-  lastStmt.traverse(function(node) {
-    var i, argIdx = -1;
-    if (node.type === 'AttributeRef' && node.obj.type === 'VarName') {
-      for (i = 0; i < funcExpr.args.length; i++) {
-        if (node.obj.name === funcExpr.args[i].name) {
-          argIdx = i;
-        }
+  var fExpr = funcExpr.clone(), resArr = [], varAssignments = {};
+  fExpr.statements.forEach(function(stmt) {
+    stmt.traverseReplace(function(node) {
+      if (node.type === 'VarName' && varAssignments.hasOwnProperty(node.name)) {
+        return varAssignments[node.name];
       }
-      if (argIdx !== -1) {
-        //node.obj = new nodes.VarName(collectionNames[argIdx]);
-      }
+      return node;
+    });
+    if (stmt.type === 'AssignmentStmt') {
+      varAssignments[stmt.target.name] = stmt.value;
     }
   });
-  return lastStmt.expr;
+  return fExpr.statements[fExpr.statements.length - 1];
 };
 
 var rewriteQueryExpr = function(qe) {

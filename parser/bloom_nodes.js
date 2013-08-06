@@ -424,10 +424,12 @@ Binop.prototype.type = 'Binop';
 Binop.prototype.datavars = ['op'];
 Binop.prototype.children = ['left', 'right'];
 Binop.prototype.genJSCode = function() {
-  return this.left.genJSCode() + ' ' + this.op + ' ' + this.right.genJSCode();
+  return '(' + this.left.genJSCode() + ' ' + this.op + ' ' +
+    this.right.genJSCode() + ')';
 };
 Binop.prototype.genSQLCode = function() {
-  return this.left.genSQLCode() + ' ' + this.op + ' ' + this.right.genSQLCode();
+  return '(' + this.left.genSQLCode() + ' ' + this.op + ' ' +
+    this.right.genSQLCode() + ')';
 };
 exports.Binop = Binop;
 
@@ -440,7 +442,10 @@ Unop.prototype.type = 'Unop';
 Unop.prototype.datavars = ['op'];
 Unop.prototype.children = ['value'];
 Unop.prototype.genJSCode = function() {
-  return this.op + ' ' + this.right;
+  return this.op + ' ' + this.value.genJSCode();
+};
+Unop.prototype.genSQLCode = function() {
+  return this.op + ' ' + this.value.genSQLCode();
 };
 exports.Unop = Unop;
 
@@ -460,7 +465,7 @@ exports.VarName = VarName;
 
 var StrLiteral = function(raw) {
   this.raw = raw;
-  this.value = raw.slice(1, -1);
+  this.value = raw === undefined ? raw : raw.slice(1, -1);
 };
 StrLiteral.prototype = new Base();
 StrLiteral.prototype.type = 'StrLiteral';
@@ -611,6 +616,26 @@ Call.prototype.genJSCode = function() {
   res += ')';
   return res;
 };
+Call.prototype.genSQLCode = function() {
+  var res, fnStr = JSON.stringify(this.func);
+  if (this.SQLMap.hasOwnProperty(fnStr)) {
+    return this.SQLMap[fnStr](this.args).genSQLCode();
+  }
+  res = this.func.genSQLCode() + '(';
+  this.args.forEach(function(arg) {
+    res += arg.genSQLCode() + ', ';
+  });
+  if (this.args.length > 0) {
+    res = res.slice(0, -2);
+  }
+  res += ')';
+  return res;
+};
+Call.prototype.SQLMap = {
+  '{"obj":{"name":"Math"},"attribute":{"name":"log"}}': function(args) {
+    return new exports.Call(new exports.VarName('LN'), args);
+  }
+}
 exports.Call = Call;
 
 var NewExpr = function(name, args) {
@@ -929,18 +954,16 @@ ArgminExpr.prototype.datavars = ['collectionName'];
 ArgminExpr.prototype.children = ['groupKeys', 'minKey'];
 ArgminExpr.prototype.genJSCode = function(stateInfo) {
   var minIdx, self = this, res = 'this._collections.' + this.collectionName +
-    '.groupBy(\nfunction(' + this.collectionName +
-    ') { return JSON.stringify([';
+    '.groupBy(\nfunction(x) { return JSON.stringify([';
   this.groupKeys.arr.forEach(function(key) {
     var idx = stateInfo[self.collectionName].cols.indexOf(key.value);
-    res += self.collectionName + '[' + idx + '], ';
+    res += 'x[' + idx + '], ';
   });
   if (this.groupKeys.arr.length > 0) {
     res = res.slice(0, -2);
   }
   minIdx = stateInfo[self.collectionName].cols.indexOf(this.minKey.value);
-  res += ']); },\nfunction (' + this.collectionName + ') { return ' +
-    this.collectionName + '; },\nfunction(k, xs) {\nvar res;\n' +
+  res += ']); },\nfunction (x) { return x; },\nfunction(k, xs) {\nvar res;\n' +
     'var min = Number.POSITIVE_INFINITY;\nxs.forEach(function(x) {\n' +
     'if (x[' + minIdx + '] < min) {\nmin = x[' + minIdx +
     '];\nres = x;\n}\n});\nreturn res;\n}\n)';
