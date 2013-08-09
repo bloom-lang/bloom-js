@@ -15,28 +15,32 @@ Base.prototype.traverse = function(fn, opt) {
   nextOpt = fn(this, opt);
   this.children.forEach(function(childName) {
     var child = self[childName];
-    if (isArray(child)) {
-      child.forEach(function(el) {
-        el.traverse(fn, nextOpt);
-      });
-    } else {
-      child.traverse(fn, nextOpt);
+    if (child !== null) {
+      if (isArray(child)) {
+        child.forEach(function(el) {
+          el.traverse(fn, nextOpt);
+        });
+      } else {
+        child.traverse(fn, nextOpt);
+      }
     }
   });
 };
 Base.prototype.traverseReplace = function(fn) {
-  var self = this;
-  this.children.forEach(function(childName) {
-    var i, child = self[childName];
-    if (isArray(child)) {
-      for (i = 0; i < child.length; i++) {
-        child[i] = child[i].traverseReplace(fn);
+  var newSelf = fn(this);
+  newSelf.children.forEach(function(childName) {
+    var i, child = newSelf[childName];
+    if (child !== null) {
+      if (isArray(child)) {
+        for (i = 0; i < child.length; i++) {
+          child[i] = child[i].traverseReplace(fn);
+        }
+      } else {
+        newSelf[childName] = child.traverseReplace(fn);
       }
-    } else {
-      self[childName] = child.traverseReplace(fn);
     }
   });
-  return fn(this);
+  return newSelf;
 };
 Base.prototype.clone = function() {
   var self = this, res = new exports[this.type]();
@@ -286,21 +290,31 @@ StateDecl.prototype.genSQLCode = function() {
 };
 exports.StateDecl = StateDecl;
 
-var BloomStmt = function(targetCollection, bloomOp, queryExpr) {
+var BloomStmt = function(targetCollection, bloomOp, origExpr) {
   this.bloomOp = bloomOp;
   this.targetCollection = targetCollection;
-  this.queryExpr = queryExpr;
+  this.origExpr = origExpr;
+  this.queryExprs = [];
   this.dependencyInfo = null;
 };
 BloomStmt.prototype = new Base();
 BloomStmt.prototype.type = 'BloomStmt';
 BloomStmt.prototype.datavars = ['bloomOp', 'dependencyInfo'];
-BloomStmt.prototype.children = ['targetCollection', 'queryExpr'];
+BloomStmt.prototype.children = ['targetCollection', 'origExpr', 'queryExprs'];
 BloomStmt.prototype.genJSCode = function(opStratum, blockType, stateInfo) {
-  return 'this.op("' + this.bloomOp + '", "' +
-    this.targetCollection.genJSCode() + '", ' +
-    this.queryExpr.genJSCode(stateInfo) + ', ' + opStratum + ', "' + blockType +
-    '");\n';
+  var i, res = 'this.op("' + this.bloomOp + '", "' +
+    this.targetCollection.genJSCode() + '", ';
+  for (i = 0; i < this.queryExprs.length; i++) {
+    if (i > 0) {
+      res += '.concat(';
+    }
+    res += this.queryExprs[i].genJSCode(stateInfo);
+    if (i > 0) {
+      res += ')';
+    }
+  }
+  res += ', ' + opStratum + ', "' + blockType + '");\n';
+  return res;
 };
 BloomStmt.prototype.genSQLCode = function(stateInfo) {
   var res, target, targetKeys, targetKeyStr = '';
@@ -313,9 +327,12 @@ BloomStmt.prototype.genSQLCode = function(stateInfo) {
     targetKeyStr = targetKeyStr.slice(0, -2);
   }
   res = 'DROP TABLE IF EXISTS tmp;\nCREATE TABLE tmp AS SELECT * FROM ' +
-    target + ' WHERE 1=0;\n' + this.queryExpr.genSQLCode(stateInfo) +
-    'INSERT INTO new_' + target + '\nSELECT DISTINCT ON (' + targetKeyStr +
-    ') * from tmp\nWHERE (' + targetKeyStr + ') NOT IN (SELECT ' +
+    target + ' WHERE 1=0;\n';
+  this.queryExprs.forEach(function(queryExpr) {
+    res += queryExpr.genSQLCode(stateInfo);
+  });
+  res += 'INSERT INTO new_' + target + '\nSELECT DISTINCT ON (' + targetKeyStr +
+    ') * FROM tmp\nWHERE (' + targetKeyStr + ') NOT IN (SELECT ' +
     targetKeyStr + ' FROM new_' + target + ');\n';
   return res;
 };
@@ -441,8 +458,13 @@ Unop.prototype = new Base();
 Unop.prototype.type = 'Unop';
 Unop.prototype.datavars = ['op'];
 Unop.prototype.children = ['value'];
+Unop.prototype.JSMap = {
+  'not': '!',
+  '-': '-',
+  '+': '+'
+};
 Unop.prototype.genJSCode = function() {
-  return this.op + ' ' + this.value.genJSCode();
+  return this.JSMap[this.op] + ' ' + this.value.genJSCode();
 };
 Unop.prototype.genSQLCode = function() {
   return this.op + ' ' + this.value.genSQLCode();
@@ -521,6 +543,20 @@ NumLiteral.prototype.genSQLCode = function() {
   return this.value;
 };
 exports.NumLiteral = NumLiteral;
+
+var BoolLiteral = function(value) {
+  this.value = value;
+};
+BoolLiteral.prototype = new Base();
+BoolLiteral.prototype.type = 'BoolLiteral';
+BoolLiteral.prototype.datavars = ['value'];
+BoolLiteral.prototype.genJSCode = function() {
+  return this.value;
+};
+BoolLiteral.prototype.genSQLCode = function() {
+  return this.value;
+};
+exports.BoolLiteral = BoolLiteral;
 
 var ArrDisplay = function(arr) {
   this.arr = arr;
@@ -798,20 +834,20 @@ ValuesExpr.prototype.genSQLCode = function() {
 };
 exports.ValuesExpr = ValuesExpr;
 
-var SelectExpr = function(collectionName, varName, selectCols) {
+var SelectExpr = function(collectionName, varName, selectCols, whereExpr) {
   this.collectionName = collectionName;
   this.varName = varName;
   this.selectCols = selectCols;
+  this.whereExpr = whereExpr === undefined ? null : whereExpr;
 };
 SelectExpr.prototype = new QueryExpr();
 SelectExpr.prototype.type = 'SelectExpr';
 SelectExpr.prototype.collections = function() { return [this.collectionName]; };
 SelectExpr.prototype.datavars = ['collectionName', 'varName'];
-SelectExpr.prototype.children = ['selectCols'];
+SelectExpr.prototype.children = ['selectCols', 'whereExpr'];
 SelectExpr.prototype.genJSCode = function(stateInfo) {
-  var sCols, self = this, res;
-  sCols = this.selectCols.clone();
-  sCols.traverseReplace(function(node) {
+  var genColIndices, sCols, wExpr, self = this, res;
+  genColIndices = function(node) {
     var idx;
     if (node.type === 'AttributeRef' && node.obj.type === 'VarName' &&
         node.attribute.type === 'VarName' && node.obj.name === self.varName) {
@@ -819,19 +855,33 @@ SelectExpr.prototype.genJSCode = function(stateInfo) {
       return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
     }
     return node;
-  });
-  res = 'this._collections.' + this.collectionName + '.select(\nfunction(' +
-    this.varName + ') { return ' + sCols.genJSCode() + '; }\n)';
+  };
+  sCols = this.selectCols.clone();
+  sCols.traverseReplace(genColIndices);
+  res = 'this._collections.' + this.collectionName;
+  if (this.whereExpr !== null) {
+    wExpr = this.whereExpr.clone();
+    wExpr.traverseReplace(genColIndices);
+    res += '.where(function(' + this.varName + ') { return ' +
+      wExpr.genJSCode() + '; })';
+  }
+  res += '.select(\nfunction(' + this.varName + ') { return ' +
+    sCols.genJSCode() + '; }\n)';
   return res;
 };
 SelectExpr.prototype.genSQLCode = function(stateInfo) {
-  return 'INSERT INTO tmp\nSELECT ' + this.selectCols.genSQLCode() + ' FROM ' +
-    this.collectionName + ' ' + this.varName + ';\n';
+  var res = 'INSERT INTO tmp\nSELECT ' + this.selectCols.genSQLCode() +
+    ' FROM ' + this.collectionName + ' ' + this.varName;
+  if (this.whereExpr !== null) {
+    res += '\nWHERE ' + this.whereExpr.genSQLCode();
+  }
+  res += ';\n';
+  return res;
 };
 exports.SelectExpr = SelectExpr;
 
 var JoinExpr = function(leftCol, rightCol, leftKeys, rightKeys, leftVar,
-                        rightVar, joinCols) {
+                        rightVar, joinCols, whereExpr) {
   this.leftCollectionName = leftCol;
   this.rightCollectionName = rightCol;
   this.leftJoinKeys = leftKeys;
@@ -839,6 +889,7 @@ var JoinExpr = function(leftCol, rightCol, leftKeys, rightKeys, leftVar,
   this.leftVarName = leftVar;
   this.rightVarName = rightVar;
   this.joinCols = joinCols;
+  this.whereExpr = whereExpr === undefined ? null : whereExpr;
 };
 JoinExpr.prototype = new QueryExpr();
 JoinExpr.prototype.type = 'JoinExpr';
@@ -847,9 +898,27 @@ JoinExpr.prototype.collections = function() {
 };
 JoinExpr.prototype.datavars = ['leftCollectionName', 'rightCollectionName',
   'leftVarName', 'rightVarName'];
-JoinExpr.prototype.children = ['leftJoinKeys', 'rightJoinKeys', 'joinCols'];
+JoinExpr.prototype.children = ['leftJoinKeys', 'rightJoinKeys', 'joinCols',
+  'whereExpr'];
 JoinExpr.prototype.genJSCode = function(stateInfo) {
-  var jCols, self = this, res = 'this._collections.' + this.leftCollectionName +
+  var genColIndices, jCols, wExpr, self = this, res;
+  genColIndices = function(node) {
+    var idx;
+    if (node.type === 'AttributeRef' && node.obj.type === 'VarName' &&
+        node.attribute.type === 'VarName') {
+      if (node.obj.name === self.leftVarName) {
+        idx = stateInfo[self.leftCollectionName].cols.
+          indexOf(node.attribute.name);
+        return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
+      } else if (node.obj.name === self.rightVarName) {
+        idx = stateInfo[self.rightCollectionName].cols.
+          indexOf(node.attribute.name);
+        return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
+      }
+    }
+    return node;
+  };
+  res = 'this._collections.' + this.leftCollectionName +
     '.join(\nthis._collections.' + this.rightCollectionName +
     ',\nfunction(x) { return JSON.stringify([';
   this.leftJoinKeys.arr.forEach(function(key) {
@@ -868,24 +937,22 @@ JoinExpr.prototype.genJSCode = function(stateInfo) {
     res = res.slice(0, -2);
   }
   jCols = this.joinCols.clone();
-  jCols.traverseReplace(function(node) {
-    var idx;
-    if (node.type === 'AttributeRef' && node.obj.type === 'VarName' &&
-        node.attribute.type === 'VarName') {
-      if (node.obj.name === self.leftVarName) {
-        idx = stateInfo[self.leftCollectionName].cols.
-          indexOf(node.attribute.name);
-        return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
-      } else if (node.obj.name === self.rightVarName) {
-        idx = stateInfo[self.rightCollectionName].cols.
-          indexOf(node.attribute.name);
-        return new exports.Subscription(node.obj, new exports.NumLiteral(idx));
-      }
-    }
-    return node;
-  });
+  jCols.traverseReplace(genColIndices);
   res += ']); },\nfunction(' + this.leftVarName + ', ' + this.rightVarName +
-    ') { return ' + jCols.genJSCode() + '; }\n)';
+    ') {\n'
+  if (this.whereExpr !== null) {
+    wExpr = this.whereExpr.clone();
+    wExpr.traverseReplace(genColIndices);
+    res += 'if (' + wExpr.genJSCode() + ') {\n';
+  }
+  res += 'return ' + jCols.genJSCode() + ';\n';
+  if (this.whereExpr !== null) {
+    res += '}\nreturn null;\n';
+  }
+  res += '}\n)';
+  if (this.whereExpr !== null) {
+    res += '.where(function(x) { return x !== null; })';
+  }
   return res;
 }
 JoinExpr.prototype.genSQLCode = function(stateInfo) {
@@ -894,7 +961,7 @@ JoinExpr.prototype.genSQLCode = function(stateInfo) {
     this.leftCollectionName + ' ' + this.leftVarName + ' INNER JOIN '+
     this.rightCollectionName + ' ' + this.rightVarName;
   if (ljk.length > 0) {
-    res += ' ON ';
+    res += '\nON ';
   }
   for (i = 0; i < ljk.length; i++) {
     res += this.leftVarName + '.' + ljk[i].value + ' = ' + this.rightVarName +
@@ -902,6 +969,9 @@ JoinExpr.prototype.genSQLCode = function(stateInfo) {
   }
   if (ljk.length > 0) {
     res = res.slice(0, -2);
+  }
+  if (this.whereExpr !== null) {
+    res += '\nWHERE ' + this.whereExpr.genSQLCode();
   }
   res += ';\n';
   return res;

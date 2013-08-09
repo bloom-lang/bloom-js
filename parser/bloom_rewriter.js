@@ -36,6 +36,63 @@ var consolidateBloomBlocks = function(classBlock) {
   return res;
 };
 
+var getCondStmtLists = function(stmts) {
+  var condStmtLists = [], initStmts = [];
+  stmts.forEach(function(stmt) {
+    var trueLists, falseLists, curLists, newCondStmtLists;
+    if (stmt.type === 'IfStmt' || stmt.type === 'ElseIfClause') {
+      curLists = [];
+      trueLists = getCondStmtLists(stmt.thenStmts);
+      if (stmt.elseClause.type === 'ElseIfClause') {
+        falseLists = getCondStmtLists([stmt.elseClause]);
+      } else if (stmt.elseClause.type === 'ElseClause') {
+        falseLists = getCondStmtLists(stmt.elseClause.statements);
+      }
+      if (trueLists.length > 0) {
+        trueLists.forEach(function(trueList) {
+          var newCond = new nodes.Binop(stmt.cond, 'and', trueList[0]);
+          curLists.push([newCond, trueList[1]]);
+        });
+      } else {
+        curLists.push([stmt.cond, stmt.thenStmts]);
+      }
+      if (falseLists.length > 0) {
+        falseLists.forEach(function(falseList) {
+          var newCond = new nodes.Binop(new nodes.Unop('not', stmt.cond), 'and',
+                                        falseList[0]);
+          curLists.push([newCond, falseList[1]]);
+        });
+      } else {
+        curLists.push([new nodes.Unop('not', stmt.cond),
+                      stmt.elseClause.statements]);
+      }
+      if (condStmtLists.length === 0) {
+        curLists.forEach(function(curList) {
+          curList[1] = initStmts.concat(curList[1]);
+        });
+        condStmtLists = curLists;
+      } else {
+        newCondStmtLists = [];
+        condStmtLists.forEach(function(condStmtList) {
+          curLists.forEach(function(curList) {
+            var newCond = new nodes.Binop(condStmtList[0], 'and', curList[0]);
+            newCondStmtLists.push([newCond,
+                                  condStmtList[1].concat(curList[1])]);
+          });
+        });
+        condStmtLists = newCondStmtLists;
+      }
+    } else if (condStmtLists.length === 0) {
+      initStmts.push(stmt);
+    } else {
+      condStmtLists.forEach(function(condList) {
+        condList[1].push(stmt);
+      });
+    }
+  });
+  return condStmtLists;
+};
+
 var getColumnArray = function(funcExpr, collectionNames) {
   var fExpr = funcExpr.clone(), resArr = [], varAssignments = {};
   fExpr.statements.forEach(function(stmt) {
@@ -49,23 +106,37 @@ var getColumnArray = function(funcExpr, collectionNames) {
       varAssignments[stmt.target.name] = stmt.value;
     }
   });
-  return fExpr.statements[fExpr.statements.length - 1];
+  return fExpr.statements[fExpr.statements.length - 1].expr;
 };
 
-var rewriteQueryExpr = function(qe) {
+var getQueryExprs = function(qe) {
   var i, primary, fnName, leftCollectionName, rightCollectionName, leftKeysArr,
-    rightKeysArr, res = qe;
+    rightKeysArr, condStmtLists, res = [qe];
   if (qe.type === 'AttributeRef' && qe.attribute.name === 'inspected') {
-    res = new nodes.SelectExpr(qe.obj.name, 'x', new nodes.VarName('*'));
+    res = [new nodes.SelectExpr(qe.obj.name, 'x', new nodes.VarName('*'))];
   } else if (qe.type === 'ArrDisplay') {
-    res = new nodes.ValuesExpr(qe.arr);
+    res = [new nodes.ValuesExpr(qe.arr)];
   } else if (qe.type === 'PrimaryBlock') {
     if (qe.primary.type === 'VarName') {
-      res = new nodes.SelectExpr(
-        qe.primary.name,
-        qe.funcExpr.args[0].name,
-        getColumnArray(qe.funcExpr, [qe.primary.name])
-      );
+      condStmtLists = getCondStmtLists(qe.funcExpr.statements);
+      if (condStmtLists.length > 0) {
+        res = [];
+        condStmtLists.forEach(function(condStmtList) {
+          var fExpr = new nodes.FuncExpr(qe.funcExpr.args, condStmtList[1]);
+          res.push(new nodes.SelectExpr(
+            qe.primary.name,
+            qe.funcExpr.args[0].name,
+            getColumnArray(fExpr, [qe.primary.name]),
+            condStmtList[0]
+          ));
+        });
+      } else {
+        res = [new nodes.SelectExpr(
+          qe.primary.name,
+          qe.funcExpr.args[0].name,
+          getColumnArray(qe.funcExpr, [qe.primary.name])
+        )];
+      }
     } else if (qe.primary.type === 'Call' &&
                qe.primary.func.type === 'AttributeRef') {
       fnName = qe.primary.func.attribute.name;
@@ -78,50 +149,76 @@ var rewriteQueryExpr = function(qe) {
           leftKeysArr.push(qe.primary.args[0].keys[i]);
           rightKeysArr.push(qe.primary.args[0].vals[i]);
         }
-        res = new nodes.JoinExpr(
-          leftCollectionName,
-          rightCollectionName,
-          new nodes.ArrDisplay(leftKeysArr),
-          new nodes.ArrDisplay(rightKeysArr),
-          qe.funcExpr.args[0].name,
-          qe.funcExpr.args[1].name,
-          getColumnArray(qe.funcExpr, [leftCollectionName, rightCollectionName])
-        );
+        condStmtLists = getCondStmtLists(qe.funcExpr.statements);
+        if (condStmtLists.length > 0) {
+          res = [];
+          condStmtLists.forEach(function(condStmtList) {
+            var fExpr = new nodes.FuncExpr(qe.funcExpr.args, condStmtList[1]);
+            res.push(new nodes.JoinExpr(
+              leftCollectionName,
+              rightCollectionName,
+              new nodes.ArrDisplay(leftKeysArr),
+              new nodes.ArrDisplay(rightKeysArr),
+              qe.funcExpr.args[0].name,
+              qe.funcExpr.args[1].name,
+              getColumnArray(fExpr, [leftCollectionName, rightCollectionName]),
+              condStmtList[0]
+            ));
+          });
+        } else {
+          res = [new nodes.JoinExpr(
+            leftCollectionName,
+            rightCollectionName,
+            new nodes.ArrDisplay(leftKeysArr),
+            new nodes.ArrDisplay(rightKeysArr),
+            qe.funcExpr.args[0].name,
+            qe.funcExpr.args[1].name,
+            getColumnArray(qe.funcExpr,
+                           [leftCollectionName, rightCollectionName])
+          )];
+        }
       } else if (fnName === 'reduce') {
-        res = new nodes.ReduceExpr(qe.primary.func.obj.name, qe.primary.args[0],
-                                   qe.funcExpr);
+        res = [new nodes.ReduceExpr(qe.primary.func.obj.name,
+                                    qe.primary.args[0], qe.funcExpr)];
       }
     }
   } else if (qe.type === 'Call' && qe.func.type === 'AttributeRef') {
     fnName = qe.func.attribute.name;
     if (fnName === 'group') {
-      res = new nodes.GroupExpr(qe.func.obj.name, qe.args[0], qe.args[1]);
+      res = [new nodes.GroupExpr(qe.func.obj.name, qe.args[0], qe.args[1])];
     } else if (fnName === 'argmin') {
-      res = new nodes.ArgminExpr(qe.func.obj.name, qe.args[0], qe.args[1]);
+      res = [new nodes.ArgminExpr(qe.func.obj.name, qe.args[0], qe.args[1])];
     }
   }
   return res;
 };
 
 var getDependencyInfo = function(bloomStmt) {
-  var res = {
+  var monotonic = true, res = {
     target: bloomStmt.targetCollection.name,
     monotonicDeps: [],
     nonMonotonicDeps: []
   };
-  if (bloomStmt.queryExpr.monotonic) {
-    res.monotonicDeps = bloomStmt.queryExpr.collections();
+  bloomStmt.queryExprs.forEach(function(qe) {
+    monotonic = monotonic && qe.monotonic;
+  });
+  if (monotonic) {
+    bloomStmt.queryExprs.forEach(function(qe) {
+      res.monotonicDeps = res.monotonicDeps.concat(qe.collections());
+    });
   } else {
-    res.nonMonotonicDeps = bloomStmt.queryExpr.collections();
+    bloomStmt.queryExprs.forEach(function(qe) {
+      res.nonMonotonicDeps = res.nonMonotonicDeps.concat(qe.collections());
+    });
   }
   return res;
 };
 
 var stratifyOps = function(bloomBlock, stateInfo) {
   var i, name, node, parentName, childName, childNode, toVisit = [],
-    postOrder = [], ccToVisit = [], ccCounter = -1, comp, num, childNum,
-    childComp, topoToVisit = [], collectionNodes = {}, connectedComponents = {},
-    opStrata = [];
+  postOrder = [], ccToVisit = [], ccCounter = -1, comp, num, childNum,
+  childComp, topoToVisit = [], collectionNodes = {}, connectedComponents = {},
+  opStrata = [];
   for (name in stateInfo) {
     if (stateInfo.hasOwnProperty(name)) {
       collectionNodes[name] = {
@@ -281,7 +378,7 @@ exports.rewrite = function(ast) {
       node.stateInfo = getStateInfo(node);
       node.statements = consolidateBloomBlocks(node);
     } else if (node.type === 'BloomStmt') {
-      node.queryExpr = rewriteQueryExpr(node.queryExpr);
+      node.queryExprs = getQueryExprs(node.origExpr);
       node.dependencyInfo = getDependencyInfo(node);
     }
   });
