@@ -299,6 +299,6 @@ var bloomAst = parser.parse(bloomStr);
 
 rewriteProgram(bloomAst);
 
-var jsCode = bloomAst.genCode();
+var jsCode = bloomAst.genJSCode();
 
 console.log(jsCode);

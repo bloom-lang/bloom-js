@@ -14,5 +14,5 @@ if (inpFile !== undefined) {
 bloomAst = parser.parse(bloomStr);
 bloomAst = rewriter.rewrite(bloomAst);
 
-//console.log(bloomAst.genJSCode());
-console.log(bloomAst.genSQLCode());
+console.log(bloomAst.genJSCode());
+//console.log(bloomAst.genSQLCode());
