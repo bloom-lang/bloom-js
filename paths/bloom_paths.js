@@ -3,6 +3,7 @@ var Bloom = require('./Bloom');
 var Paths = function() {
   this._collections = {};
   this._anonCollections = {};
+  this._collectionKeys = {};
   this._collectionNodes = {};
   this._connectedComponents = {};
   this._ops = [];
@@ -91,6 +92,7 @@ Paths.prototype.initializeOps = function() {
 var p = new Paths();
 
 p.tick();
+console.log(p._collections.paths._data.toArray());
 
 console.log('-----');
 
@@ -102,9 +104,11 @@ p.op(':=', p._collections.links, [{from: 'e', to: 'f', cost: 1}],
   });
 
 p.tick();
+console.log(p._collections.paths._data.toArray());
 
 console.log('-----');
 
 var q = new Paths();
 
 q.tick();
+console.log(q._collections.paths._data.toArray());
