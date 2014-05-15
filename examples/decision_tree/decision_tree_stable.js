@@ -1,5 +1,5 @@
 var fs = require('fs');
-var Bloom = require('bloom-runtime');
+var Bloom = require('bloom-runtime-stable');
 var Ix = require('ix');
 
 var DecisionTree = function() {
