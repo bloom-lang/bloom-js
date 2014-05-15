@@ -74,7 +74,7 @@ Program.prototype = new Base();
 Program.prototype.type = 'Program';
 Program.prototype.children = ['statements'];
 Program.prototype.genJSCode = function() {
-  var res = "var Bloom = require('./Bloom');\n";
+  var res = "var Bloom = require('bloom-runtime');\n";
   this.statements.forEach(function(statement) {
     res += statement.genJSCode();
   });

@@ -3,7 +3,7 @@ var parser = require('./bloom_parser');
 var rewriter = require('./bloom_rewriter');
 parser.yy = require('./bloom_nodes');
 
-var bloomStr, bloomAst, inpFile = process.argv[2];
+var bloomStr, bloomAst, inpFile = process.argv[2], outLang = process.argv[3];
 
 if (inpFile !== undefined) {
   bloomStr = fs.readFileSync(inpFile).toString();
@@ -14,5 +14,8 @@ if (inpFile !== undefined) {
 bloomAst = parser.parse(bloomStr);
 bloomAst = rewriter.rewrite(bloomAst);
 
-console.log(bloomAst.genJSCode());
-//console.log(bloomAst.genSQLCode());
+if (outLang === "sql") {
+  console.log(bloomAst.genSQLCode());
+} else {
+  console.log(bloomAst.genJSCode());
+}
