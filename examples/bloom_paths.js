@@ -1,6 +1,5 @@
 var Bloom = require('bloom-runtime');
-
-var Paths = function() {
+var ShortestPaths = function() {
   this._collections = {};
   this._anonCollections = {};
   this._collectionKeys = {};
@@ -10,106 +9,59 @@ var Paths = function() {
   this._bloomOps = [];
   this._bloomOpStrata = [];
   this.initState();
+  this.initBootstrapOps();
   this.initBloomOps();
 };
-
-Paths.prototype = new Bloom();
-
-Paths.prototype.initState = function() {
-  this.addCollection('links', 'table', ['from', 'to', 'cost'], []);
-  this.addCollection('paths', 'table', ['from', 'to', 'nxt', 'cost'], []);
-  this.addCollection('shortest', 'scratch', ['from', 'to'], ['nxt', 'cost']);
+ShortestPaths.prototype = new Bloom();
+ShortestPaths.prototype.initState = function() {
+  this.addCollection("link", "table", ["src", "dest", "cost"], []);
+  this.addCollection("path", "table", ["src", "dest", "nxt", "cost"], []);
+  this.addCollection("shortest", "scratch", ["src", "dest"], ["nxt", "cost"]);
 };
-
-Paths.prototype.initBloomOps = function() {
-  this.op('<=', this._collections.paths,
-          this._collections.links.select(function(link) {
-    return {
-      from: link.from,
-      to: link.to,
-      nxt: link.to,
-      cost: link.cost
-    };
-  }),
-  {
-    target: 'paths',
-    monotonicDeps: ['links'],
-    nonMonotonicDeps: []
-  });
-
- this.op('<=', this._collections['links'],
-    [{from: 'a', to: 'b', cost: 1},
-      {from: 'a', to: 'b', cost: 4},
-      {from: 'b', to: 'c', cost: 1},
-      {from: 'c', to: 'd', cost: 1},
-      {from: 'd', to: 'e', cost: 1}],
-  {
-    target: 'links',
-    monotonicDeps: [],
-    nonMonotonicDeps: []
-  });
-
-  this.op('<=', this._collections.paths, this._collections.links.join(
-    this._collections.paths,
-    function(link) { return link.to; },
-    function(path) { return path.from; },
-    function(link, path) {
-      return {
-        from: link.from,
-        to: path.to,
-        nxt: link.to,
-        cost: link.cost + path.cost
-      };
+ShortestPaths.prototype.initBootstrapOps = function() {
+  this.op("<=", "link", [['a', 'b', 1], ['a', 'b', 4], ['b', 'c', 1], ['c', 'd', 1], ['d', 'e', 1]], 1, "Bootstrap");
+};
+ShortestPaths.prototype.initBloomOps = function() {
+  this.op("<=", "path", this._collections.link.select(
+    function(l) { return [l[0], l[1], l[1], l[2]]; }
+  ), 1, "Bloom");
+  this.op("<=", "path", this._collections.link.join(
+    this._collections.path,
+    function(x) { return JSON.stringify([x[1]]); },
+    function(y) { return JSON.stringify([y[0]]); },
+    function(l, p) {
+      return [l[0], p[1], l[1], (l[2] + p[3])];
     }
-  ),
-  {
-    target: 'paths',
-    monotonicDeps: ['links', 'paths'],
-    nonMonotonicDeps: []
-  });
-
-  this.op('<=', this._collections.shortest, this._collections.paths.groupBy(
-    function(path) { return JSON.stringify([path.from, path.to]); },
-    function(path) { return path; },
-    function(k, ps) {
+  ), 1, "Bloom");
+  this.op("<=", "shortest", this._collections.path.groupBy(
+    function(x) { return JSON.stringify([x[0], x[1]]); },
+    function (x) { return x; },
+    function(k, xs) {
       var res;
       var min = Number.POSITIVE_INFINITY;
-      ps.forEach(function(p) {
-        if (p.cost < min) {
-          min = p.cost;
-          res = p;
+      xs.forEach(function(x) {
+        if (x[3] < min) {
+          min = x[3];
+          res = x;
         }
       });
       return res;
     }
-  ),
-  {
-    target: 'shortest',
-    monotonicDeps: [],
-    nonMonotonicDeps: ['paths']
-  });
+  ), 2, "Bloom");
 };
+var program = new ShortestPaths();
+program.tick();
+console.log("links:");
+console.log(program._collections.link._data.toArray());
+console.log("----");
+program.tick();
+console.log("links:");
+console.log(program._collections.link._data.toArray());
+console.log("paths:");
+console.log(program._collections.path._data.toArray());
+console.log("shortest:");
+console.log(program._collections.shortest._data.toArray());
+console.log("----");
+program.tick();
+console.log(program._collections.shortest._data.toArray());
 
-var p = new Paths();
-
-p.tick();
-console.log(p._collections.paths._data.toArray());
-
-console.log('-----');
-
-p.op('<=', p._collections.links, [{from: 'e', to: 'f', cost: 1}],
-  {
-    target: 'links',
-    monotonicDeps: [],
-    nonMonotonicDeps: []
-  });
-
-p.tick();
-console.log(p._collections.paths._data.toArray());
-
-console.log('-----');
-
-var q = new Paths();
-
-q.tick();
-console.log(q._collections.paths._data.toArray());

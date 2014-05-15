@@ -42,21 +42,21 @@ program = ShortestPaths.new
 # populate our little example.  we put two links between a and b
 # to see whether our shortest-paths code does the right thing.
 
-program.tick # one timestamp is enough for this simple program
+program.tick() # one timestamp is enough for this simple program
 puts "links:"
-program.link.to_a.sort.each {|t| puts t.inspect}
+puts program._collections.link._data.toArray()
 
 puts "----"
 
 # now lets add an extra link and recompute
 #program.link <- [["d", "e", 1]]
-program.tick
+program.tick()
 puts "links:"
-program.link.to_a.sort.each {|t| puts t.inspect}
+puts program._collections.link._data.toArray()
 puts "paths:"
-program.path.to_a.sort.each {|t| puts t.inspect}
+puts program._collections.path._data.toArray()
 puts "shortest:"
-program.shortest.to_a.sort.each {|t| puts t.inspect}
+puts program._collections.shortest._data.toArray()
 puts "----"
-program.tick
-program.shortest.to_a.sort.each {|t| puts t.inspect}
+program.tick()
+puts program._collections.shortest._data.toArray()
