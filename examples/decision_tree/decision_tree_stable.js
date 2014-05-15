@@ -17,7 +17,7 @@ var DecisionTree = function() {
 DecisionTree.prototype = new Bloom();
 
 var i, numFeatures;
-var data = fs.readFileSync('iris.data', 'utf8');
+var data = fs.readFileSync('examples/decision_tree/iris.data', 'utf8');
 var dataRows = data.trim().split('\n');
 var dataArr = [];
 var locArr = [];
