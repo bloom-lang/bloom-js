@@ -37,7 +37,7 @@ class ShortestPaths
 end
 
 # compute shortest paths.
-program = ShortestPaths.new
+program = ShortestPaths.new()
 
 # populate our little example.  we put two links between a and b
 # to see whether our shortest-paths code does the right thing.

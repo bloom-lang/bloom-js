@@ -380,6 +380,11 @@ exports.rewrite = function(ast) {
     } else if (node.type === 'BloomStmt') {
       node.queryExprs = getQueryExprs(node.origExpr);
       node.dependencyInfo = getDependencyInfo(node);
+    } else if (node.type === 'AssignmentStmt' &&
+               node.value.type === 'Call' &&
+               node.value.func.type === 'AttributeRef' &&
+               node.value.func.attribute.name === 'new') {
+      node.value = new nodes.NewExpr(node.value.func.obj.name, node.value.args);
     }
   });
   ast.traverse(function(node, opt) {
